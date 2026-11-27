@@ -93,6 +93,27 @@ public interface ICasoService
         string rol,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Consulta al servicio RAG preparando fuentes y respuesta antes del stream SSE.</summary>
+    Task<SugerenciaIaPreparada> ConsultarRagParaCasoAsync(
+        Guid id,
+        Guid usuarioId,
+        string rol,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Persiste la sugerencia IA generada tras finalizar la transmisión SSE.</summary>
+    Task<CasoDetalleDto> PersistirSugerenciaIaAsync(
+        Guid id,
+        SugerenciaIaPreparada sugerencia,
+        Guid usuarioId,
+        string rol,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Calcula métricas operativas y consumo FinOps de IA para el usuario o de forma global.</summary>
+    Task<MetricasMesaAyudaDto> ObtenerMetricasAsync(
+        Guid usuarioId,
+        string rol,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Aprueba y opcionalmente edita una sugerencia IA para publicarla oficialmente.</summary>
     Task<RespuestaDto> AprobarSugerenciaIAAsync(
         Guid casoId,

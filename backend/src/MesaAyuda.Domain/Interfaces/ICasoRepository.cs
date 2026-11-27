@@ -17,8 +17,11 @@ public interface ICasoRepository
     /// <summary>Lista todos los casos marcados como eliminados ordenados del más reciente al más antiguo.</summary>
     Task<IReadOnlyList<Caso>> ListarEliminadosAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Verifica si existe al menos un caso activo con el título especificado.</summary>
+    /// <summary>Verifica si existe al menos un caso activo con el título indicado.</summary>
     Task<bool> ExistsActiveByTitleAsync(string titulo, CancellationToken cancellationToken = default);
+
+    /// <summary>Lista todos los casos activos con sus respuestas para el cálculo de métricas KPI.</summary>
+    Task<IReadOnlyList<Caso>> ListarActivosConRespuestasAsync(Guid? clienteId, CancellationToken cancellationToken = default);
 
     /// <summary>Obtiene una página de casos aplicando filtros opcionales de cliente, estado, prioridad y búsqueda.</summary>
     Task<(IReadOnlyList<Caso> Items, int TotalCount)> GetPagedAsync(

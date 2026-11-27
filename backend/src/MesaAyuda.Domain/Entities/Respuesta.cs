@@ -28,6 +28,9 @@ public class Respuesta
     /// <summary>Arreglo JSON serializado con las fuentes del manual ERP citadas por la IA.</summary>
     public string FuentesCitadasJson { get; private set; } = "[]";
 
+    /// <summary>Cantidad de tokens consumidos al generar la respuesta de IA (FinOps).</summary>
+    public int TokensUsados { get; private set; }
+
     /// <summary>Fecha de registro de la respuesta en formato UTC.</summary>
     public DateTime FechaCreacion { get; private set; }
 
@@ -44,7 +47,8 @@ public class Respuesta
         bool esGeneradaPorIA,
         bool aprobadaPorAnalista,
         string autorNombre,
-        string fuentesCitadasJson = "[]")
+        string fuentesCitadasJson = "[]",
+        int tokensUsados = 0)
     {
         if (casoId == Guid.Empty)
             throw new DomainException("El identificador del caso es obligatorio para registrar una respuesta.");
@@ -60,6 +64,7 @@ public class Respuesta
         AprobadaPorAnalista = aprobadaPorAnalista;
         AutorNombre = autorNombre.Trim();
         FuentesCitadasJson = string.IsNullOrWhiteSpace(fuentesCitadasJson) ? "[]" : fuentesCitadasJson.Trim();
+        TokensUsados = Math.Max(0, tokensUsados);
         FechaCreacion = DateTime.UtcNow;
     }
 

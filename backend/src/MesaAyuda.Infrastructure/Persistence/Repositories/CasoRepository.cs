@@ -125,6 +125,25 @@ public class CasoRepository : ICasoRepository
     }
 
     /// <summary>
+    /// Lista todos los casos activos incluyendo sus respuestas para agregación de métricas KPI.
+    /// </summary>
+    public async Task<IReadOnlyList<Caso>> ListarActivosConRespuestasAsync(
+        Guid? clienteId,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _dbContext.Casos
+            .AsNoTracking()
+            .Include(c => c.Respuestas)
+            .Where(c => !c.Eliminado)
+            .AsQueryable();
+
+        if (clienteId.HasValue)
+            query = query.Where(c => c.ClienteId == clienteId.Value);
+
+        return await query.ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// Registra explícitamente una respuesta hija nueva para evitar conflictos de concurrencia en EF Core.
     /// </summary>
     public async Task AddRespuestaAsync(Respuesta respuesta, CancellationToken cancellationToken = default)

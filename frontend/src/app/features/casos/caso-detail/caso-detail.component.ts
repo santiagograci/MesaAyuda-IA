@@ -11,9 +11,11 @@ import {
   signal
 } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Subscription } from 'rxjs';
 import {
   CasoDetalle,
   EstadoCaso,
+  FuenteCitada,
   PRIORIDAD_INFO,
   PRIORIDAD_LIST,
   PrioridadCaso,
@@ -241,6 +243,43 @@ const PRIORIDAD_RANK: Record<PrioridadCaso, number> = {
           <div class="closed-banner">
             Este caso se encuentra <strong>Cerrado</strong> de forma definitiva y no admite cambios ni nuevas respuestas.
           </div>
+        }
+
+        @if (generatingIa() && authService.isAnalista()) {
+          <section class="streaming-panel ia-card" aria-label="Generación de sugerencia IA en tiempo real">
+            <div class="resp-header">
+              <div class="resp-author">
+                <span class="spinner"></span>
+                <strong>Generando respuesta anclada a manuales ERP...</strong>
+              </div>
+              @if (streamingTokens() > 0) {
+                <span class="badge badge-ia">{{ streamingTokens() }} tokens</span>
+              }
+            </div>
+
+            @if (streamingSources().length > 0) {
+              <div class="citations-box">
+                <div class="citations-title">Fuentes citadas del manual Ofima ERP:</div>
+                <div class="citations-grid">
+                  @for (fuente of streamingSources(); track $index) {
+                    <div class="citation-item">
+                      <div class="citation-head">
+                        <strong>{{ fuente.documento }}</strong>
+                        <span class="score-pill">{{ fuente.puntaje * 100 | number: '1.0-1' }}%</span>
+                      </div>
+                      <div class="citation-sec">{{ fuente.seccion }}</div>
+                      <div class="citation-frag">{{ fuente.fragmento }}</div>
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+
+            <div class="streaming-output">
+              <span>{{ streamingText() || 'Consultando base documental e iniciando redacción...' }}</span>
+              <span class="stream-cursor" aria-hidden="true">▌</span>
+            </div>
+          </section>
         }
 
         @if (authService.isAnalista() && pendingIaDrafts().length > 0) {
@@ -629,6 +668,26 @@ const PRIORIDAD_RANK: Record<PrioridadCaso, number> = {
         gap: 0.5rem;
         flex-wrap: wrap;
       }
+      .streaming-panel {
+        border: 1px dashed var(--accent-primary);
+      }
+      .streaming-output {
+        font-size: 0.92rem;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        color: var(--text-primary);
+      }
+      .stream-cursor {
+        display: inline-block;
+        margin-left: 2px;
+        color: var(--accent-primary);
+        animation: streamBlink 0.9s steps(2, start) infinite;
+      }
+      @keyframes streamBlink {
+        to {
+          visibility: hidden;
+        }
+      }
     `
   ]
 })
@@ -650,6 +709,7 @@ export class CasoDetailComponent implements OnDestroy {
       this.replyForm.reset();
       this.cancelarEliminacion();
       this.cerrarPanelPrioridad();
+      this.resetStreamingState();
     }
   }
 
@@ -670,11 +730,16 @@ export class CasoDetailComponent implements OnDestroy {
   readonly priorityPanelOpen = signal<boolean>(false);
   readonly selectedNewPriority = signal<PrioridadCaso>('Alta');
   readonly prioridadInfoMap = PRIORIDAD_INFO;
+  readonly streamingText = signal<string>('');
+  readonly streamingSources = signal<FuenteCitada[]>([]);
+  readonly streamingTokens = signal<number>(0);
 
   private countdownTimer: ReturnType<typeof setInterval> | null = null;
+  private streamSub: Subscription | null = null;
 
   ngOnDestroy(): void {
     this.clearCountdownTimer();
+    this.resetStreamingState();
   }
 
   readonly availablePriorities = computed<PrioridadCaso[]>(() => {
@@ -755,18 +820,52 @@ export class CasoDetailComponent implements OnDestroy {
       return;
     }
 
+    this.resetStreamingState();
     this.generatingIa.set(true);
     this.errorMsg.set('');
     this.infoMsg.set('');
 
+    if (this.authService.isAnalista()) {
+      this.streamSub = this.casosService.sugerirRespuestaStream(current.id).subscribe({
+        next: (event) => {
+          if (event.type === 'sources') {
+            this.streamingSources.set(event.fuentes);
+            this.streamingTokens.set(event.tokensUsados);
+          } else if (event.type === 'token') {
+            this.streamingText.update((prev) => prev + event.chunk);
+          } else if (event.type === 'done') {
+            this.generatingIa.set(false);
+            this.streamingText.set('');
+            this.streamingSources.set([]);
+            this.streamingTokens.set(0);
+            this.casoSignal.set(event.caso);
+            this.infoMsg.set(
+              'Sugerencia IA generada en vivo. Revísala en la sección de borradores y publícala cuando esté lista.'
+            );
+            this.casoActualizado.emit(event.caso);
+          } else if (event.type === 'error') {
+            this.generatingIa.set(false);
+            this.errorMsg.set(event.detail);
+          }
+        },
+        error: (err: unknown) => {
+          this.generatingIa.set(false);
+          this.errorMsg.set(
+            err instanceof Error ? err.message : this.extractErrorMessage(err)
+          );
+        },
+        complete: () => {
+          this.generatingIa.set(false);
+          this.streamSub = null;
+        }
+      });
+      return;
+    }
+
     this.casosService.pedirSugerenciaIA(current.id).subscribe({
       next: () => {
         this.generatingIa.set(false);
-        this.infoMsg.set(
-          this.authService.isAnalista()
-            ? 'Sugerencia IA generada. Revísala en la sección de borradores y publícala cuando esté lista.'
-            : 'Sugerencia IA generada y enviada a revisión del Analista.'
-        );
+        this.infoMsg.set('Sugerencia IA generada y enviada a revisión del Analista.');
         this.reloadCaso(current.id);
       },
       error: (err: unknown) => {
@@ -774,6 +873,17 @@ export class CasoDetailComponent implements OnDestroy {
         this.errorMsg.set(this.extractErrorMessage(err));
       }
     });
+  }
+
+  private resetStreamingState(): void {
+    if (this.streamSub) {
+      this.streamSub.unsubscribe();
+      this.streamSub = null;
+    }
+    this.generatingIa.set(false);
+    this.streamingText.set('');
+    this.streamingSources.set([]);
+    this.streamingTokens.set(0);
   }
 
   aprobarSugerencia(resp: Respuesta): void {

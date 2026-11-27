@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { signal } from '@angular/core';
-import { of } from 'rxjs';
-import { CasoDetalle } from '../../../core/models/api.models';
+import { from, of } from 'rxjs';
+import { CasoDetalle, RagStreamEvent } from '../../../core/models/api.models';
 import { AuthService } from '../../../core/services/auth.service';
 import { CasosService } from '../../../core/services/casos.service';
 import { CasoDetailComponent } from './caso-detail.component';
@@ -28,7 +28,8 @@ describe('CasoDetailComponent (Borrado con cuenta regresiva y escalamiento de pr
     isAnalistaSignal = signal(true);
     casosServiceSpy = jasmine.createSpyObj<CasosService>('CasosService', [
       'eliminarCaso',
-      'cambiarPrioridad'
+      'cambiarPrioridad',
+      'sugerirRespuestaStream'
     ]);
     casosServiceSpy.eliminarCaso.and.returnValue(of(void 0));
 
@@ -197,5 +198,59 @@ describe('CasoDetailComponent (Borrado con cuenta regresiva y escalamiento de pr
       'Existe alternativa temporal.'
     );
     expect(el.textContent).toContain('[Cambio de Prioridad: Alta ➔ Baja]');
+  });
+
+  it('debe consumir streaming SSE de sugerencia IA y actualizar el borrador al evento done', () => {
+    isAnalistaSignal.set(true);
+    component.caso = mockCaso;
+    fixture.detectChanges();
+
+    const streamedCaso: CasoDetalle = {
+      ...mockCaso,
+      respuestas: [
+        {
+          id: 'ia-stream-1',
+          texto: 'Emita Nota Crédito NC-01 en Facturación > Notas.',
+          esGeneradaPorIA: true,
+          aprobadaPorAnalista: false,
+          autorNombre: 'MesaAyuda IA',
+          fuentesCitadas: [
+            {
+              documento: '01-facturacion-electronica-y-anulaciones.md',
+              seccion: 'Reglas de Anulación',
+              fragmento: 'Use NC-01 para revertir factura aceptada.',
+              puntaje: 0.91
+            }
+          ],
+          fechaCreacion: '2026-11-26T16:10:00Z'
+        }
+      ]
+    };
+
+    const streamEvents: RagStreamEvent[] = [
+      {
+        type: 'sources',
+        fuentes: streamedCaso.respuestas[0].fuentesCitadas,
+        tokensUsados: 245
+      },
+      { type: 'token', chunk: 'Emita Nota Crédito ' },
+      { type: 'token', chunk: 'NC-01 en Facturación > Notas.' },
+      { type: 'done', caso: streamedCaso }
+    ];
+
+    casosServiceSpy.sugerirRespuestaStream.and.returnValue(from(streamEvents));
+
+    const updatedSpy = spyOn(component.casoActualizado, 'emit');
+    const el: HTMLElement = fixture.nativeElement;
+    const iaBtn = Array.from(el.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Pedir sugerencia a la IA')
+    ) as HTMLButtonElement;
+    iaBtn.click();
+    fixture.detectChanges();
+
+    expect(casosServiceSpy.sugerirRespuestaStream).toHaveBeenCalledWith('caso-delete-1');
+    expect(updatedSpy).toHaveBeenCalledWith(streamedCaso);
+    expect(el.textContent).toContain('Borradores de IA pendientes de aprobación (1)');
+    expect(el.textContent).toContain('01-facturacion-electronica-y-anulaciones.md');
   });
 });

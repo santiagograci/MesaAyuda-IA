@@ -1,5 +1,12 @@
+import { DecimalPipe } from '@angular/common';
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { CasoDetalle, CasoEliminado, CasoResumen, EstadoCaso } from '../../core/models/api.models';
+import {
+  CasoDetalle,
+  CasoEliminado,
+  CasoResumen,
+  EstadoCaso,
+  MetricasMesaAyuda
+} from '../../core/models/api.models';
 import { AuthService } from '../../core/services/auth.service';
 import { CasosService } from '../../core/services/casos.service';
 import { OfimaLogoComponent } from '../../shared/ofima-logo/ofima-logo.component';
@@ -15,6 +22,7 @@ import { CasosListComponent } from './casos-list/casos-list.component';
   selector: 'app-casos-shell',
   standalone: true,
   imports: [
+    DecimalPipe,
     ThemeCustomizerComponent,
     OfimaLogoComponent,
     CasosListComponent,
@@ -45,6 +53,40 @@ import { CasosListComponent } from './casos-list/casos-list.component';
           </button>
         </div>
       </header>
+
+      @if (metricas(); as m) {
+        <section class="kpi-strip" aria-label="Indicadores ejecutivos MesaAyuda IA">
+          <article class="kpi-card card-surface">
+            <span class="kpi-label">Casos Activos</span>
+            <strong class="kpi-value">{{ m.casosAbiertos + m.casosEnProceso }}</strong>
+            <span class="kpi-sub">
+              {{ m.casosAbiertos }} abiertos · {{ m.casosEnProceso }} en proceso · {{ m.casosResueltos }} resueltos
+            </span>
+          </article>
+
+          <article class="kpi-card card-surface" [class.kpi-danger]="m.casosCriticosActivos > 0">
+            <span class="kpi-label">Severidad Crítica</span>
+            <strong class="kpi-value">{{ m.casosCriticosActivos }}</strong>
+            <span class="kpi-sub">
+              {{ m.casosCriticosActivos > 0 ? 'Requiere atención prioritaria' : 'Sin incidentes críticos activos' }}
+            </span>
+          </article>
+
+          <article class="kpi-card card-surface">
+            <span class="kpi-label">Adopción Asistente IA</span>
+            <strong class="kpi-value">{{ m.tasaAdopcionIaPorcentaje | number: '1.0-1' }}%</strong>
+            <span class="kpi-sub">
+              {{ m.sugerenciasIaAprobadas }} de {{ m.sugerenciasIaGeneradas }} sugerencias aprobadas
+            </span>
+          </article>
+
+          <article class="kpi-card card-surface">
+            <span class="kpi-label">Consumo FinOps RAG</span>
+            <strong class="kpi-value">{{ m.tokensTotalesConsumidos | number }}</strong>
+            <span class="kpi-sub">tokens procesados por IA</span>
+          </article>
+        </section>
+      }
 
       <main class="split-workspace">
         <app-casos-list
@@ -141,6 +183,51 @@ import { CasosListComponent } from './casos-list/casos-list.component';
         gap: 0.75rem;
         align-content: start;
       }
+      .kpi-strip {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.75rem;
+        padding: 0.85rem 1.25rem 0;
+      }
+      .kpi-card {
+        padding: 0.75rem 0.95rem;
+        display: grid;
+        gap: 0.2rem;
+      }
+      .kpi-label {
+        font-size: 0.74rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: var(--text-secondary);
+      }
+      .kpi-value {
+        font-size: 1.4rem;
+        line-height: 1.15;
+        color: var(--accent-text);
+      }
+      .kpi-sub {
+        font-size: 0.76rem;
+        color: var(--text-secondary);
+      }
+      .kpi-card.kpi-danger {
+        border-color: var(--danger-border);
+        background: var(--danger-bg);
+        .kpi-value,
+        .kpi-label {
+          color: var(--danger-text);
+        }
+      }
+      @media (max-width: 960px) {
+        .kpi-strip {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+      @media (max-width: 540px) {
+        .kpi-strip {
+          grid-template-columns: 1fr;
+        }
+      }
       .placeholder {
         padding: 3rem 1.5rem;
         text-align: center;
@@ -177,9 +264,11 @@ export class CasosShellComponent implements OnInit {
   readonly creating = signal<boolean>(false);
   readonly errorMsg = signal<string>('');
   readonly infoMsg = signal<string>('');
+  readonly metricas = signal<MetricasMesaAyuda | null>(null);
 
   ngOnInit(): void {
     this.loadCasos(true);
+    this.loadMetricas();
     if (this.authService.isAnalista()) {
       this.loadPapelera();
     }
@@ -224,17 +313,20 @@ export class CasosShellComponent implements OnInit {
     this.selectedCaso.set(detalle);
     this.page.set(1);
     this.loadCasos(false);
+    this.loadMetricas();
   }
 
   onCasoActualizado(detalle: CasoDetalle): void {
     this.selectedCaso.set(detalle);
     this.loadCasos(false);
+    this.loadMetricas();
   }
 
   onCasoEliminado(): void {
     this.selectedCaso.set(null);
     this.infoMsg.set('Caso enviado a la papelera de reciclaje.');
     this.loadCasos(true);
+    this.loadMetricas();
     if (this.authService.isAnalista()) {
       this.loadPapelera();
     }
@@ -262,6 +354,7 @@ export class CasosShellComponent implements OnInit {
         this.infoMsg.set(`Caso "${restaurado.titulo}" restaurado desde la papelera.`);
         this.loadPapelera();
         this.loadCasos(false);
+        this.loadMetricas();
       },
       error: () => {
         this.restoringId.set(null);
@@ -282,10 +375,22 @@ export class CasosShellComponent implements OnInit {
         this.infoMsg.set(res.mensaje);
         this.loadPapelera();
         this.loadCasos(true);
+        this.loadMetricas();
       },
       error: () => {
         this.restoringDemo.set(false);
         this.errorMsg.set('No se pudieron restaurar los casos de demostración.');
+      }
+    });
+  }
+
+  private loadMetricas(): void {
+    this.casosService.obtenerMetricas().subscribe({
+      next: (data) => {
+        this.metricas.set(data);
+      },
+      error: () => {
+        // Mantiene la interfaz operativa si las métricas fallan de forma transitoria.
       }
     });
   }

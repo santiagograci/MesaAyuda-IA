@@ -350,12 +350,95 @@ public class CasoService : ICasoService
         var ragResponse = await _ragServiceClient.ConsultarSugerenciaAsync(consulta, cancellationToken);
 
         var fuentesJson = JsonSerializer.Serialize(ragResponse.Fuentes ?? new List<FuenteCitadaDto>(), JsonOptions);
-        var sugerencia = caso.AgregarSugerenciaIA(ragResponse.Respuesta, fuentesJson);
+        var sugerencia = caso.AgregarSugerenciaIA(ragResponse.Respuesta, fuentesJson, ragResponse.TokensUsados);
 
         await _casoRepository.AddRespuestaAsync(sugerencia, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return MapToRespuestaDto(sugerencia);
+    }
+
+    /// <inheritdoc />
+    public async Task<SugerenciaIaPreparada> ConsultarRagParaCasoAsync(
+        Guid id,
+        Guid usuarioId,
+        string rol,
+        CancellationToken cancellationToken = default)
+    {
+        var caso = await GetCasoOrThrowAsync(id, cancellationToken);
+        EnsureOwnershipOrAnalyst(caso, usuarioId, rol);
+
+        if (caso.Estado == EstadoCaso.Cerrado)
+            throw new DomainException("No se pueden generar sugerencias de IA en un caso Cerrado.");
+
+        var consulta = $"{caso.Titulo}. {caso.Descripcion}";
+        var ragResponse = await _ragServiceClient.ConsultarSugerenciaAsync(consulta, cancellationToken);
+
+        return new SugerenciaIaPreparada(
+            Respuesta: ragResponse.Respuesta,
+            Fuentes: ragResponse.Fuentes ?? new List<FuenteCitadaDto>(),
+            TokensUsados: ragResponse.TokensUsados);
+    }
+
+    /// <inheritdoc />
+    public async Task<CasoDetalleDto> PersistirSugerenciaIaAsync(
+        Guid id,
+        SugerenciaIaPreparada sugerencia,
+        Guid usuarioId,
+        string rol,
+        CancellationToken cancellationToken = default)
+    {
+        var caso = await GetCasoOrThrowAsync(id, cancellationToken);
+        EnsureOwnershipOrAnalyst(caso, usuarioId, rol);
+
+        var fuentesJson = JsonSerializer.Serialize(sugerencia.Fuentes ?? new List<FuenteCitadaDto>(), JsonOptions);
+        var entity = caso.AgregarSugerenciaIA(sugerencia.Respuesta, fuentesJson, sugerencia.TokensUsados);
+
+        await _casoRepository.AddRespuestaAsync(entity, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        var esAnalista = string.Equals(rol, nameof(RolUsuario.Analista), StringComparison.OrdinalIgnoreCase);
+        return MapToDetalleDto(caso, soloPublicadas: !esAnalista);
+    }
+
+    /// <inheritdoc />
+    public async Task<MetricasMesaAyudaDto> ObtenerMetricasAsync(
+        Guid usuarioId,
+        string rol,
+        CancellationToken cancellationToken = default)
+    {
+        var esAnalista = string.Equals(rol, nameof(RolUsuario.Analista), StringComparison.OrdinalIgnoreCase);
+        var filtroCliente = esAnalista ? (Guid?)null : usuarioId;
+
+        var casosActivos = await _casoRepository.ListarActivosConRespuestasAsync(filtroCliente, cancellationToken);
+
+        var totalCasos = casosActivos.Count;
+        var abiertos = casosActivos.Count(c => c.Estado == EstadoCaso.Abierto);
+        var enProceso = casosActivos.Count(c => c.Estado == EstadoCaso.EnProceso);
+        var resueltos = casosActivos.Count(c => c.Estado == EstadoCaso.Resuelto);
+        var cerrados = casosActivos.Count(c => c.Estado == EstadoCaso.Cerrado);
+        var criticosActivos = casosActivos.Count(c =>
+            c.Prioridad == PrioridadCaso.Critica &&
+            c.Estado != EstadoCaso.Resuelto &&
+            c.Estado != EstadoCaso.Cerrado);
+
+        var respuestasIa = casosActivos.SelectMany(c => c.Respuestas).Where(r => r.EsGeneradaPorIA).ToList();
+        var generadas = respuestasIa.Count;
+        var aprobadas = respuestasIa.Count(r => r.AprobadaPorAnalista);
+        var tasaAdopcion = generadas == 0 ? 0.0 : Math.Round((double)aprobadas * 100.0 / generadas, 1);
+        var tokensTotales = respuestasIa.Sum(r => r.TokensUsados);
+
+        return new MetricasMesaAyudaDto(
+            TotalCasos: totalCasos,
+            CasosAbiertos: abiertos,
+            CasosEnProceso: enProceso,
+            CasosResueltos: resueltos,
+            CasosCerrados: cerrados,
+            CasosCriticosActivos: criticosActivos,
+            SugerenciasIaGeneradas: generadas,
+            SugerenciasIaAprobadas: aprobadas,
+            TasaAdopcionIaPorcentaje: tasaAdopcion,
+            TokensTotalesConsumidos: tokensTotales);
     }
 
     /// <inheritdoc />

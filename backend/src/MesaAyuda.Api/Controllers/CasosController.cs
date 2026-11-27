@@ -143,6 +143,19 @@ public class CasosController : ControllerBase
     }
 
     /// <summary>
+    /// Retorna KPIs operativos y consumo FinOps de IA (globales para Analista o propios para Cliente).
+    /// </summary>
+    [HttpGet("metricas")]
+    [ProducesResponseType(typeof(MetricasMesaAyudaDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<MetricasMesaAyudaDto>> ObtenerMetricas(
+        CancellationToken cancellationToken = default)
+    {
+        var (usuarioId, rol, _) = GetCurrentUser();
+        var metricas = await _casoService.ObtenerMetricasAsync(usuarioId, rol, cancellationToken);
+        return Ok(metricas);
+    }
+
+    /// <summary>
     /// Recrea los 3 casos de demostración predeterminados si fueron eliminados (acción exclusiva del rol Analista).
     /// </summary>
     [HttpPost("restaurar-demo")]
@@ -237,6 +250,72 @@ public class CasosController : ControllerBase
         var (usuarioId, rol, _) = GetCurrentUser();
         var sugerencia = await _casoService.GenerarSugerenciaIAAsync(id, usuarioId, rol, cancellationToken);
         return Ok(sugerencia);
+    }
+
+    /// <summary>
+    /// Genera una sugerencia IA transmitiendo fuentes y tokens en tiempo real mediante Server-Sent Events (SSE).
+    /// </summary>
+    [HttpPost("{id:guid}/sugerencia/stream")]
+    [Authorize(Roles = "Analista")]
+    public async Task GenerarSugerenciaIaStream(
+        Guid id,
+        CancellationToken cancellationToken = default)
+    {
+        var (usuarioId, rol, _) = GetCurrentUser();
+        var jsonOpts = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
+
+        Response.StatusCode = StatusCodes.Status200OK;
+        Response.ContentType = "text/event-stream; charset=utf-8";
+        Response.Headers.CacheControl = "no-cache";
+        Response.Headers["X-Accel-Buffering"] = "no";
+
+        async Task EmitAsync(string eventName, object payload)
+        {
+            var data = System.Text.Json.JsonSerializer.Serialize(payload, jsonOpts);
+            await Response.WriteAsync($"event: {eventName}\ndata: {data}\n\n", cancellationToken);
+            await Response.Body.FlushAsync(cancellationToken);
+        }
+
+        try
+        {
+            var preparada = await _casoService.ConsultarRagParaCasoAsync(id, usuarioId, rol, cancellationToken);
+
+            await EmitAsync("sources", new
+            {
+                fuentes = preparada.Fuentes,
+                tokensUsados = preparada.TokensUsados
+            });
+
+            var matches = System.Text.RegularExpressions.Regex.Matches(preparada.Respuesta, @"\S+\s*|\s+");
+            for (var i = 0; i < matches.Count; i += 2)
+            {
+                var chunk = i + 1 < matches.Count
+                    ? matches[i].Value + matches[i + 1].Value
+                    : matches[i].Value;
+
+                await EmitAsync("token", new { chunk });
+                await Task.Delay(20, cancellationToken);
+            }
+
+            var detalleActualizado = await _casoService.PersistirSugerenciaIaAsync(
+                id,
+                preparada,
+                usuarioId,
+                rol,
+                cancellationToken);
+
+            await EmitAsync("done", detalleActualizado);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            var detail = ex switch
+            {
+                KeyNotFoundException => ex.Message,
+                MesaAyuda.Domain.Exceptions.DomainException => ex.Message,
+                _ => "No fue posible completar la generación de sugerencia IA en streaming."
+            };
+            await EmitAsync("error", new { detail });
+        }
     }
 
     /// <summary>

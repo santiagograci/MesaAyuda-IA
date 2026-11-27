@@ -381,6 +381,55 @@ public class CasosEndpointsTests : IClassFixture<CustomWebApplicationFactory>
             r => r.Texto.Contains("[Cambio de Prioridad: Critica ➔ Media]", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task GetMetricas_YPostSugerenciaStream_RetornaKpisYSseCorrectamente()
+    {
+        using var client = _factory.CreateClient();
+
+        var loginCliente = await LoginAsync(client, "cliente@empresa.com", "Ofima2026*");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", loginCliente.Token);
+
+        var metricasClienteRes = await client.GetAsync("/api/casos/metricas");
+        Assert.Equal(HttpStatusCode.OK, metricasClienteRes.StatusCode);
+        var metricasCliente = await metricasClienteRes.Content.ReadFromJsonAsync<MetricasMesaAyudaDto>(JsonOptions);
+        Assert.NotNull(metricasCliente);
+        Assert.True(metricasCliente!.TotalCasos >= 1);
+
+        var createRes = await client.PostAsJsonAsync(
+            "/api/casos",
+            new CrearCasoRequest(
+                $"Streaming SSE {Guid.NewGuid():N}",
+                "Consulta para probar generación en tiempo real por Server-Sent Events y consumo FinOps.",
+                "Critica"));
+        Assert.Equal(HttpStatusCode.Created, createRes.StatusCode);
+        var caso = await createRes.Content.ReadFromJsonAsync<CasoDetalleDto>(JsonOptions);
+        Assert.NotNull(caso);
+
+        // Cliente no está autorizado al endpoint stream
+        var forbiddenStream = await client.PostAsync($"/api/casos/{caso!.Id}/sugerencia/stream", null);
+        Assert.Equal(HttpStatusCode.Forbidden, forbiddenStream.StatusCode);
+
+        var loginAnalista = await LoginAsync(client, "analista@ofima.com", "Ofima2026*");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", loginAnalista.Token);
+
+        var streamRes = await client.PostAsync($"/api/casos/{caso.Id}/sugerencia/stream", null);
+        Assert.Equal(HttpStatusCode.OK, streamRes.StatusCode);
+        Assert.Equal("text/event-stream", streamRes.Content.Headers.ContentType?.MediaType);
+
+        var sseBody = await streamRes.Content.ReadAsStringAsync();
+        Assert.Contains("event: sources", sseBody);
+        Assert.Contains("event: token", sseBody);
+        Assert.Contains("event: done", sseBody);
+
+        var metricasAnalistaRes = await client.GetAsync("/api/casos/metricas");
+        Assert.Equal(HttpStatusCode.OK, metricasAnalistaRes.StatusCode);
+        var metricasAnalista = await metricasAnalistaRes.Content.ReadFromJsonAsync<MetricasMesaAyudaDto>(JsonOptions);
+        Assert.NotNull(metricasAnalista);
+        Assert.True(metricasAnalista!.SugerenciasIaGeneradas >= 1);
+        Assert.True(metricasAnalista.TokensTotalesConsumidos >= 190);
+        Assert.True(metricasAnalista.CasosCriticosActivos >= 1);
+    }
+
     private static async Task<LoginResponse> LoginAsync(HttpClient client, string email, string password)
     {
         var response = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, password));

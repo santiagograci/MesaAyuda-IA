@@ -143,7 +143,7 @@ public class Caso
     /// <summary>
     /// Registra un borrador de respuesta sugerido por IA pendiente de aprobación humana.
     /// </summary>
-    public Respuesta AgregarSugerenciaIA(string texto, string fuentesJson)
+    public Respuesta AgregarSugerenciaIA(string texto, string fuentesJson, int tokensUsados = 0)
     {
         EnsureNotDeleted();
 
@@ -156,7 +156,8 @@ public class Caso
             esGeneradaPorIA: true,
             aprobadaPorAnalista: false,
             autorNombre: "MesaAyuda IA",
-            fuentesCitadasJson: fuentesJson);
+            fuentesCitadasJson: fuentesJson,
+            tokensUsados: tokensUsados);
 
         _respuestas.Add(sugerencia);
         return sugerencia;

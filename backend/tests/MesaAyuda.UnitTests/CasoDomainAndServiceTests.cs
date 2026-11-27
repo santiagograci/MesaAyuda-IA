@@ -336,6 +336,16 @@ public class CasoDomainAndServiceTests
             return Task.CompletedTask;
         }
 
+        public Task<IReadOnlyList<Caso>> ListarActivosConRespuestasAsync(
+            Guid? clienteId,
+            CancellationToken cancellationToken = default)
+        {
+            var query = _casos.Where(c => !c.Eliminado);
+            if (clienteId.HasValue)
+                query = query.Where(c => c.ClienteId == clienteId.Value);
+            return Task.FromResult<IReadOnlyList<Caso>>(query.ToList());
+        }
+
         public Task AddRespuestaAsync(Respuesta respuesta, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 

@@ -1,5 +1,5 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Injectable, inject } from '@angular/core';
+import { Injectable, NgZone, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
   ActualizarCasoRequest,
@@ -12,11 +12,15 @@ import {
   CrearCasoRequest,
   CrearRespuestaRequest,
   EstadoCaso,
+  FuenteCitada,
+  MetricasMesaAyuda,
   PagedResult,
   PrioridadCaso,
+  RagStreamEvent,
   Respuesta,
   RestaurarDemoResponse
 } from '../models/api.models';
+import { AuthService } from './auth.service';
 
 /**
  * Cliente HTTP tipado para todas las operaciones sobre /api/casos.
@@ -24,6 +28,8 @@ import {
 @Injectable({ providedIn: 'root' })
 export class CasosService {
   private readonly http = inject(HttpClient);
+  private readonly authService = inject(AuthService);
+  private readonly ngZone = inject(NgZone);
   private readonly baseUrl = '/api/casos';
 
   /** Obtiene una página de casos filtrada opcionalmente por estado. */
@@ -103,6 +109,130 @@ export class CasosService {
   /** Solicita una sugerencia generada por el motor RAG para el caso indicado. */
   pedirSugerenciaIA(id: string): Observable<Respuesta> {
     return this.http.post<Respuesta>(`${this.baseUrl}/${id}/sugerencia`, {});
+  }
+
+  /** Consulta indicadores operativos y consumo FinOps de IA desde GET /api/casos/metricas. */
+  obtenerMetricas(): Observable<MetricasMesaAyuda> {
+    return this.http.get<MetricasMesaAyuda>(`${this.baseUrl}/metricas`);
+  }
+
+  /**
+   * Consume en tiempo real el flujo Server-Sent Events (SSE) para generación de sugerencia IA.
+   */
+  sugerirRespuestaStream(id: string): Observable<RagStreamEvent> {
+    return new Observable<RagStreamEvent>((subscriber) => {
+      const controller = new AbortController();
+      const token = this.authService.getToken();
+
+      const headers: Record<string, string> = {
+        Accept: 'text/event-stream'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      void (async () => {
+        try {
+          const response = await fetch(`${this.baseUrl}/${id}/sugerencia/stream`, {
+            method: 'POST',
+            headers,
+            signal: controller.signal
+          });
+
+          if (!response.ok || !response.body) {
+            throw new Error(`Error HTTP ${response.status} al iniciar streaming IA.`);
+          }
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder('utf-8');
+          let buffer = '';
+
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) {
+              break;
+            }
+
+            buffer += decoder.decode(value, { stream: true });
+            let sepIdx = buffer.indexOf('\n\n');
+            while (sepIdx !== -1) {
+              const rawFrame = buffer.slice(0, sepIdx);
+              buffer = buffer.slice(sepIdx + 2);
+              this.emitParsedSseFrame(rawFrame, subscriber);
+              sepIdx = buffer.indexOf('\n\n');
+            }
+          }
+
+          if (buffer.trim()) {
+            this.emitParsedSseFrame(buffer, subscriber);
+          }
+
+          this.ngZone.run(() => subscriber.complete());
+        } catch (err) {
+          if (controller.signal.aborted) {
+            return;
+          }
+          const detail =
+            err instanceof Error ? err.message : 'Error de conexión durante el streaming IA.';
+          this.ngZone.run(() => subscriber.error(new Error(detail)));
+        }
+      })();
+
+      return () => {
+        controller.abort();
+      };
+    });
+  }
+
+  private emitParsedSseFrame(
+    rawFrame: string,
+    subscriber: { next: (val: RagStreamEvent) => void }
+  ): void {
+    const lines = rawFrame.split(/\r?\n/);
+    let eventName = 'message';
+    const dataLines: string[] = [];
+
+    for (const line of lines) {
+      if (line.startsWith('event:')) {
+        eventName = line.slice(6).trim();
+      } else if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).trim());
+      }
+    }
+
+    if (dataLines.length === 0) {
+      return;
+    }
+
+    try {
+      const payload = JSON.parse(dataLines.join('\n')) as Record<string, unknown>;
+      this.ngZone.run(() => {
+        if (eventName === 'sources') {
+          subscriber.next({
+            type: 'sources',
+            fuentes: (payload['fuentes'] as FuenteCitada[]) ?? [],
+            tokensUsados: Number(payload['tokensUsados'] ?? 0)
+          });
+        } else if (eventName === 'token') {
+          subscriber.next({
+            type: 'token',
+            chunk: String(payload['chunk'] ?? '')
+          });
+        } else if (eventName === 'done') {
+          subscriber.next({
+            type: 'done',
+            caso: payload as unknown as CasoDetalle
+          });
+        } else if (eventName === 'error') {
+          subscriber.next({
+            type: 'error',
+            detail: String(payload['detail'] ?? 'No se pudo generar la sugerencia IA.')
+          });
+        }
+      });
+    } catch {
+      // Ignora tramas JSON incompletas.
+    }
   }
 
   /** Aprueba y opcionalmente edita una sugerencia de IA (exclusivo Analista). */

@@ -175,3 +175,24 @@ export interface CambiarPrioridadRequest {
   nuevaPrioridad: PrioridadCaso;
   justificacion: string;
 }
+
+/** KPIs operativos y consumo FinOps del motor RAG en MesaAyuda IA. */
+export interface MetricasMesaAyuda {
+  totalCasos: number;
+  casosAbiertos: number;
+  casosEnProceso: number;
+  casosResueltos: number;
+  casosCerrados: number;
+  casosCriticosActivos: number;
+  sugerenciasIaGeneradas: number;
+  sugerenciasIaAprobadas: number;
+  tasaAdopcionIaPorcentaje: number;
+  tokensTotalesConsumidos: number;
+}
+
+/** Eventos emitidos por el flujo SSE POST /api/casos/{id}/sugerencia/stream. */
+export type RagStreamEvent =
+  | { type: 'sources'; fuentes: FuenteCitada[]; tokensUsados: number }
+  | { type: 'token'; chunk: string }
+  | { type: 'done'; caso: CasoDetalle }
+  | { type: 'error'; detail: string };

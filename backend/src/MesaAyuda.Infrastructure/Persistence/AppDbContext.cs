@@ -135,6 +135,10 @@ public class AppDbContext : DbContext
                 .IsRequired()
                 .HasDefaultValue("[]");
 
+            builder.Property(r => r.TokensUsados)
+                .IsRequired()
+                .HasDefaultValue(0);
+
             builder.Property(r => r.FechaCreacion)
                 .IsRequired();
 

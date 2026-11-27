@@ -102,3 +102,26 @@ public record CambiarPrioridadRequest(
     [Required(ErrorMessage = "La justificación es obligatoria.")]
     [MinLength(10, ErrorMessage = "La justificación debe tener al menos 10 caracteres.")]
     string Justificacion);
+
+/// <summary>
+/// Resultado intermedio de la consulta RAG antes de transmitir por SSE y persistir como borrador.
+/// </summary>
+public record SugerenciaIaPreparada(
+    string Respuesta,
+    List<FuenteCitadaDto> Fuentes,
+    int TokensUsados);
+
+/// <summary>
+/// Indicadores ejecutivos operativos y de consumo FinOps de IA para MesaAyuda IA.
+/// </summary>
+public record MetricasMesaAyudaDto(
+    int TotalCasos,
+    int CasosAbiertos,
+    int CasosEnProceso,
+    int CasosResueltos,
+    int CasosCerrados,
+    int CasosCriticosActivos,
+    int SugerenciasIaGeneradas,
+    int SugerenciasIaAprobadas,
+    double TasaAdopcionIaPorcentaje,
+    int TokensTotalesConsumidos);
