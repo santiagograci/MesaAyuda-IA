@@ -1,41 +1,47 @@
 # MesaAyuda IA — Plataforma de Soporte Empresarial con RAG (Ofima S.A.S.)
 
-Plataforma empresarial de mesa de ayuda inteligente para **Ofima ERP**, diseñada con arquitectura desacoplada de 3 piezas, búsqueda híbrida documental (Vectorial + Léxica BM25), control de acceso por roles con JWT, resiliencia distribuida con Polly y aprobación humana obligatoria antes de publicar sugerencias de IA.
+**MesaAyuda IA** es una plataforma integral de mesa de ayuda inteligente para **Ofima ERP**, construida con arquitectura desacoplada de 4 contenedores Docker, recuperación documental híbrida (Vectorial + Léxica BM25), control de acceso por roles con JWT, resiliencia distribuida y validación humana obligatoria (*Human-in-the-Loop*) antes de publicar respuestas asistidas por IA.
 
-## Visión Ejecutiva y Stack Tecnológico
+---
+
+## 1. Resumen Ejecutivo y Arquitectura
 
 | Componente | Tecnología | Puerto (Host -> Contenedor) | Responsabilidad Principal |
 | :--- | :--- | :---: | :--- |
-| **Frontend Web** | Angular 18+ (Standalone + Signals + Nginx) | `4200:80` | Portal Split-Screen, diseño Claro/Oscuro + máscaras, flujo de tickets y proxy `/api/` |
-| **Backend Core** | .NET 8 Clean Architecture + EF Core + Polly | `5080:8080` | Autenticación JWT, máquina de estados de casos, `ProblemDetails` y cliente RAG resiliente |
-| **Servicio RAG** | Python 3.11 FastAPI + ChromaDB + BM25 | `8000:8000` | Ingesta del corpus ERP, búsqueda híbrida, mitigación de *prompt injection* y Strategy LLM |
-| **Base de Datos** | PostgreSQL 16 Alpine | `5432:5432` | Persistencia relacional de usuarios, casos, respuestas y fuentes citadas (`pgdata`) |
+| **Frontend Web** | Angular 18+ (Standalone + Signals + Nginx) | `4200:80` | Portal Split-Screen Claro/Oscuro + máscaras, SLA visual, deflexión RAG, CSAT, streaming SSE y proxy `/api/` |
+| **Backend Core** | .NET 8 Clean Architecture + EF Core + Polly | `5080:8080` | API RESTful JWT (`Cliente` / `Analista`), máquina de estados, SLA, CSAT, SSE, métricas FinOps y gateway RAG |
+| **Servicio RAG** | Python 3.11 FastAPI + ChromaDB + BM25 | `8000:8000` | Ingesta de `.md`/`.txt`/`.pdf`, búsqueda híbrida, mitigación *prompt injection* y proveedores Strategy LLM |
+| **Base de Datos** | PostgreSQL 16 Alpine | `5432:5432` | Persistencia relacional con volumen `pgdata` y migraciones automáticas de EF Core |
 
-### Patrones de Arquitectura y Diseño Aplicados
+### Patrones de Diseño y Arquitectura Implementados
+- **.NET 8 Clean Architecture:** separación estricta en `MesaAyuda.Domain`, `MesaAyuda.Application`, `MesaAyuda.Infrastructure` y `MesaAyuda.Api`, con entidades ricas (`Caso`, `Respuesta`), patrones **Repository**, **Unit of Work**, **Dependency Injection**, **Options**, FluentValidation, `ProblemDetails` RFC 7807 y `Microsoft.Extensions.Http.Resilience` (Polly v8: `15s` por intento, `2` reintentos con jitter y Circuit Breaker).
+- **Angular 18 Moderno:** Standalone Components, Angular Signals, lazy loading por ruta (`loadComponent`), interceptor funcional JWT, guards de autenticación, debounce RxJS (`700 ms` deflexión / `300 ms` búsqueda) y temas dinámicos CSS Custom Properties.
+- **Python FastAPI RAG Híbrido:** búsqueda `0.70 Vector Coseno (all-MiniLM-L6-v2) + 0.30 BM25Okapi`, chunking por encabezados (`650 / 120`), umbral estricto (`0.35`), caché LRU de embeddings y patrón **Strategy** (`GroundedExtractiveMockProvider`, `GeminiLLMProvider`, `OpenAILLMProvider`) con fallback automático gratuito.
 
-- **Clean Architecture & DDD Táctico (.NET 8):** separación en `Domain`, `Application`, `Infrastructure` y `Api`, entidades ricas (`Caso`, `Respuesta`) que encapsulan invariantes, máquina de estados, borrado lógico (papelera), escalamiento de prioridad con auditoría, `ICasoRepository` + `IUnitOfWork`, validación con FluentValidation y manejo global RFC 7807 (`IExceptionHandler` + `ProblemDetails`).
-- **Resiliencia Distribuida & Gateway IA:** `Microsoft.Extensions.Http.Resilience` (Polly v8) con timeout por intento de `15s`, `2` reintentos con *exponential backoff* + *jitter*, Circuit Breaker y degradación controlada; streaming SSE en tiempo real (`POST /api/casos/{id}/sugerencia/stream`), KPIs operativos/FinOps (`GET /api/casos/metricas`) y pasarela documental segura para analistas (`GET /api/documentos`, `POST /api/documentos/ingestar`).
-- **Patrón Strategy & Caché LRU (Python):** proveedores intercambiables (`GroundedExtractiveMockProvider`, `GeminiLLMProvider`, `OpenAILLMProvider`) con fallback automático, anclaje estricto por umbral (`0.35`), caché LRU para embeddings de consulta e ingesta en vivo de manuales `.md`, `.txt` y `.pdf` (`GET /documentos`, `POST /ingesta/archivo`).
-- **Angular Signals & CSS Custom Properties:** estado reactivo sin sobrecarga de Redux, lazy loading por ruta (`loadComponent`), interceptor funcional JWT, cierre automático por inactividad (10 min con alerta en el último minuto), búsqueda instantánea (debounce 300ms) + filtro de prioridad, dashboard FinOps de 4 tarjetas, gestor modal de base de conocimiento RAG y motor de temas Claro/Oscuro con 3 máscaras predefinidas y creador personalizado.
+---
 
-## Inicio Rápido (Un Solo Comando)
+## 2. Inicio Rápido (Un Solo Comando)
 
-Con Docker y Docker Compose instalados, ejecuta desde la raíz del proyecto:
+Con **Docker** y **Docker Compose** instalados, ejecuta desde la raíz del repositorio:
 
 ```bash
 cp .env.example .env && docker compose up --build
 ```
 
-### URLs de Acceso Local
+Para detener los servicios (`--volumes` opcional si deseas reiniciar la base de datos):
 
+```bash
+docker compose down
+```
+
+### URLs de Acceso y Monitoreo
 - **Portal Web (Angular):** `http://localhost:4200`
 - **API .NET & Swagger UI:** `http://localhost:5080/swagger` (Health check: `http://localhost:5080/health`)
 - **Microservicio RAG (FastAPI Docs):** `http://localhost:8000/docs` (Health check: `http://localhost:8000/health`)
 - **PostgreSQL:** `localhost:5432`
 
 ### Usuarios de Demostración (Precargados Automáticamente)
-
-Al arrancar, el backend ejecuta las migraciones (`InitialCreate`) y siembra 3 cuentas listas para probar ambos roles (también disponibles como botones de **1 clic** en la pantalla de login):
+Al arrancar, el backend aplica las migraciones EF Core y siembra 3 cuentas de prueba (accesibles también con **1 clic** desde la pantalla de login):
 
 | Rol | Nombre | Correo electrónico | Contraseña |
 | :--- | :--- | :--- | :--- |
@@ -43,53 +49,69 @@ Al arrancar, el backend ejecuta las migraciones (`InitialCreate`) y siembra 3 cu
 | **Cliente** | Carlos Mendoza - Contabilidad | `cliente@empresa.com` | `Ofima2026*` |
 | **Cliente** | Laura Gómez - Tesorería | `cliente2@empresa.com` | `Ofima2026*` |
 
-## Variables de Entorno
+### Variables de Entorno (`.env.example`)
+El archivo [`.env.example`](.env.example) centraliza sin exponer secretos reales las variables de PostgreSQL (`POSTGRES_*`), JWT (`JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE`), proveedor LLM (`RAG_SERVICE_URL`, `LLM_PROVIDER=mock|gemini|openai`, `GEMINI_API_KEY`, `OPENAI_API_KEY`) y parámetros de ChromaDB/chunking (`CORPUS_PATH`, `CHROMA_PERSIST_DIR`, `COLLECTION_NAME`, `EMBEDDING_MODEL`, `CHUNK_SIZE`, `CHUNK_OVERLAP`, `SIMILARITY_THRESHOLD`). Para producción en Azure o despliegue privado, puede extenderse el Strategy hacia Azure OpenAI u Ollama self-hosted.
 
-| Variable | Valor por defecto | Descripción |
-| :--- | :--- | :--- |
-| `POSTGRES_DB` | `mesaayuda` | Nombre de la base de datos en PostgreSQL. |
-| `POSTGRES_USER` | `mesaayuda_user` | Usuario de conexión a PostgreSQL. |
-| `POSTGRES_PASSWORD` | `mesaayuda_pass_2026` | Contraseña del usuario de PostgreSQL. |
-| `JWT_SECRET` | `SuperSecretKeyForMesaAyudaIA2026OfimaTechLead!` | Clave secreta para firmar tokens JWT en el backend. |
-| `JWT_ISSUER` | `MesaAyuda.Api` | Emisor (`iss`) esperado en los tokens JWT. |
-| `JWT_AUDIENCE` | `MesaAyuda.Client` | Audiencia (`aud`) esperada en los tokens JWT. |
-| `RAG_SERVICE_URL` | `http://rag-service:8000` | URL interna del microservicio RAG dentro de `mesaayuda-net`. |
-| `LLM_PROVIDER` | `mock` | Proveedor de generación de respuestas (`mock`, `gemini`, `openai`). |
-| `GEMINI_API_KEY` | *(vacío)* | Clave de API de Google Gemini (opcional si `LLM_PROVIDER=gemini`). |
-| `OPENAI_API_KEY` | *(vacío)* | Clave de API de OpenAI (opcional si `LLM_PROVIDER=openai`). |
-| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Modelo de embeddings utilizado para vectorizar el corpus. |
-| `CHUNK_SIZE` | `650` | Tamaño máximo de fragmento de texto durante la indexación. |
-| `CHUNK_OVERLAP` | `120` | Solapamiento entre fragmentos consecutivos para preservar contexto. |
-| `SIMILARITY_THRESHOLD` | `0.35` | Umbral mínimo de similitud para considerar relevante un fragmento recuperado. |
+---
 
-## Resultados de Evaluación RAG
+## 3. Declaración Explícita del Corpus de Documentos (`/corpus`)
 
-La batería automatizada sobre los **6 manuales de Ofima ERP** (`86` fragmentos indexados con búsqueda híbrida `0.70 Vector Coseno + 0.30 BM25Okapi`) y el dataset de 10 casos (`8` en dominio + `2` fuera de dominio) obtuvo los siguientes resultados empíricos (ver reporte completo en [evaluacion-rag.md](docs/evaluacion-rag.md)):
+Al no haberse adjuntado el paquete externo de manuales en el enunciado de la prueba, se diseñó y redactó un **corpus técnico propio en [`/corpus`](corpus)** compuesto por **6 manuales operativos en Markdown** (superando el mínimo de 5 documentos solicitado), alineados con módulos y normatividad real de **Ofima ERP**:
 
-| Métrica | Resultado Obtenido |
-| :--- | :---: |
-| **Retrieval Hit Rate @ 4** | **100.00%** |
-| **Answer Groundedness / Keyword Faithfulness** | **100.00%** |
-| **Out-of-Domain Rejection Accuracy** | **100.00%** |
-| **Latencia Promedio por Consulta** | `13.75 ms` |
+1. `01-facturacion-electronica-y-anulaciones.md` — Reglas DIAN, rechazo `FAC-402` y emisión de Nota Crédito `NC-01` por CUFE.
+2. `02-cierre-contable-y-conciliacion.md` — Bloqueo de cierre `CON-301`, comprobantes en borrador y conciliación de cuenta puente `999905`.
+3. `03-inventarios-kardex-y-bodegas.md` — Valorización de inventarios, traslados entre bodegas y error `INV-108`.
+4. `04-nomina-electronica-y-novedades.md` — Nómina electrónica DIAN, novedades laborales e incapacidades.
+5. `05-cuentas-por-pagar-y-tesoreria.md` — Causación de facturas de proveedores, retenciones y egresos de tesorería.
+6. `06-seguridad-roles-y-auditoria-erp.md` — Políticas de acceso, bloqueo `SEC-423` con 2FA y trazabilidad de auditoría.
 
-## Pruebas Automatizadas e Integración Continua
+Adicionalmente, el motor RAG soporta ingesta dinámica de archivos **`.md`, `.txt` y `.pdf`** mediante `POST /ingesta`, `POST /ingesta/archivo` y el modal **📚 Base Conocimiento RAG** en el portal web.
 
-- **Python RAG (`rag-service`):** `pytest -v` -> **7 passed** (chunking con metadatos, recuperación y citación `FAC-402`, rechazo fuera de dominio, bloqueo HTTP `400` de *prompt injection*, `/health`, `/ingesta`, caché LRU, `/documentos` e ingesta en vivo de archivo `/ingesta/archivo`).
-- **.NET 8 Backend (`backend`):** `dotnet test backend/MesaAyuda.sln` -> **19 passed** (**11** pruebas unitarias de dominio/aplicación + **8** pruebas de integración HTTP end-to-end con `WebApplicationFactory` y EF Core InMemory cubriendo ciclo completo, papelera/soft delete, escalamiento de prioridad, streaming SSE, métricas KPI, filtros y documentos RAG).
-- **Angular 18 Frontend (`frontend`):** `npm test` (Jasmine/Karma en Chrome Headless) -> **16 passed** (`AuthService`, `IdleTimeoutService` con `fakeAsync`/`tick`, `CasosListComponent` con papelera/búsqueda 300ms/prioridad, `CasoDetailComponent` con cuenta regresiva 3s/prioridad/SSE y `KnowledgeBaseModalComponent`).
-- **GitHub Actions (`.github/workflows/ci.yml`):** ejecuta los 3 pipelines en paralelo ante cada `push` y `pull_request` a `main`.
+---
 
-## Documentación Técnica y Arquitectura
+## 4. Alcance Implementado (MVP + Milla Extra) y Recorte Consciente
+
+- **Funcionalidades Base (MVP):** autenticación JWT por roles (`Cliente`/`Analista`), CRUD paginado de casos con control de propiedad, máquina de estados con invariantes (`Abierto -> EnProceso -> Resuelto -> Cerrado` impidiendo cerrar sin respuesta publicada), consulta RAG con citas verificables y flujo obligatorio de edición/aprobación del Analista antes de publicar al cliente.
+- **Capacidades de Milla Extra Implementadas:**
+  - **Streaming SSE en Tiempo Real (`POST /api/casos/{id}/sugerencia/stream`):** emisión progresiva de fuentes y tokens hacia Angular sin buffering en Nginx.
+  - **Dashboard Ejecutivo Operativo y FinOps (`GET /api/casos/metricas`):** 5 tarjetas KPI con Signals (*Casos Activos*, *Severidad Crítica*, *Adopción IA*, *Consumo FinOps RAG* en tokens y *Satisfacción CSAT*).
+  - **Motor de SLAs Visuales:** cálculo automático por severidad (`Critica` 2h, `Alta` 8h, `Media` 24h, `Baja` 72h) con indicadores `EnTiempo`, `PorVencer`, `Vencido` y `Cumplido`.
+  - **Deflexión Preventiva de Tickets (`POST /api/casos/deflexion`):** consulta RAG con debounce (`700 ms`) en `+ Nuevo Caso` antes de registrar el ticket.
+  - **Encuesta CSAT (`POST /api/casos/{id}/csat`):** calificación de 1 a 5 estrellas y comentario opcional del cliente dueño al resolver/cerrar.
+  - **Escalamiento de Prioridad Auditado (`PATCH /api/casos/{id}/prioridad`):** justificación obligatoria (>= 10 caracteres) registrada en historial.
+  - **Protección contra Borrado y Papelera de Reciclaje:** soft delete (`Eliminado`/`FechaEliminacion`), confirmación con cuenta regresiva de 3s, restauración individual y restauración de casos demo.
+  - **Seguridad y Productividad UI:** cierre automático por inactividad tras 10 minutos con aviso en el último minuto (`localStorage` multi-pestaña), búsqueda instantánea (`300 ms`) + filtro por prioridad y gestor en vivo de manuales RAG.
+- **Recorte Consciente de Alcance:** se excluyeron deliberadamente la omnicanalidad IMAP/WhatsApp y el SSO con Entra ID para mantener portabilidad autocontenida con `docker compose up --build` (ver detalle completo en [02-plan-estandares-riesgos-bitacora.md](docs/02-plan-estandares-riesgos-bitacora.md)).
+
+---
+
+## 5. Evaluación Empírica RAG, Pruebas y CI/CD
+
+La evaluación automatizada sobre el corpus de 6 manuales (`86` fragmentos) y 10 casos (`8` en dominio + `2` fuera de dominio) alcanzó **100.00%** en las tres métricas (reporte completo en [evaluacion-rag.md](docs/evaluacion-rag.md)):
+
+| Suite / Pipeline | Comando | Resultado Verificado | Cobertura Principal |
+| :--- | :--- | :---: | :--- |
+| **Python RAG** | `pytest -v` | **7 passed** | Chunking + metadatos, citación `FAC-402`, anclaje negativo, *prompt injection* HTTP `400`, LRU cache, `/documentos` e ingesta `.txt` |
+| **.NET 8 Backend** | `dotnet test backend/MesaAyuda.sln` | **21 passed** | **12** unitarias (dominio, SLA, prioridad, CSAT, soft-delete, deflexión) + **9** integración `WebApplicationFactory` |
+| **Angular 18 Frontend** | `npm test` (Karma/ChromeHeadless) | **18 passed** | `AuthService`, `IdleTimeoutService`, `CasosListComponent`, `CasoCreateComponent`, `CasoDetailComponent` y `KnowledgeBaseModalComponent` |
+| **Evaluación RAG** | `python -m evaluation.evaluate` | **100% (10/10)** | Hit Rate @ 4 (`100%`), Faithfulness (`100%`), Out-of-Domain Rejection (`100%`), latencia media `13.75 ms` |
+
+El workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) ejecuta los 3 pipelines en paralelo ante cada `push` y `pull_request` sobre `main`.
+
+---
+
+## 6. Documentación de Liderazgo Técnico (`/docs`)
 
 - [Arquitectura C4 (Docker Compose y Microsoft Azure) y ADRs](docs/01-arquitectura-y-adrs.md)
 - [Plan de Evolución a 3 Meses, Estándares, Riesgos de IA y Bitácora](docs/02-plan-estandares-riesgos-bitacora.md)
-- [Evaluación Empírica del Motor RAG (10 Casos)](docs/evaluacion-rag.md)
+- [Evaluación Empírica del Motor RAG (Dataset de 10 Casos)](docs/evaluacion-rag.md)
 
-## Declaración de Uso de Asistentes de IA
+---
 
-En el desarrollo de este proyecto se utilizaron **Gemini** y **Antigravity** (IDE agéntico) de forma transparente y gobernada bajo el principio *Human-in-the-Loop*:
+## 7. Declaración Transparente del Uso de Asistentes de IA
 
-- **Alcance asistido:** generación incremental de scaffolding (estructura Clean Architecture .NET 8, endpoints FastAPI, componentes Angular Standalone), redacción inicial del corpus documental sintético estilo Ofima ERP, creación de suites de pruebas (`pytest`, `xUnit`, `Jasmine/Karma`) y diagramación Mermaid C4.
-- **Supervisión, criterio e ingeniería humana:** definición de decisiones arquitectónicas (ADRs), validación de reglas de negocio colombianas (DIAN, CUNE, PUC, incapacidad), calibración empírica del buscador híbrido (eliminación de fragmentos de solo encabezado, filtrado de stopwords en español manteniendo códigos como `CON-301` y atenuación de piso coseno para rechazar consultas fuera de dominio), revisión de seguridad JWT/RBAC/Prompt Injection y verificación end-to-end mediante compilación, pruebas automatizadas y despliegue con Docker Compose.
-- **Privacidad:** no se utilizaron datos reales, credenciales productivas ni información sensible de clientes (PII) en ningún prompt o ejemplo.
+En el desarrollo de **MesaAyuda IA** se utilizaron **Google Gemini** y **Antigravity** (IDE agéntico) como *pair programmer* bajo supervisión estricta *Human-in-the-Loop*:
+
+- **Uso asistido por IA:** apoyo en scaffolding incremental (.NET 8 Clean Architecture, FastAPI, componentes Standalone Angular 18), generación inicial de borradores del corpus sintético ERP, estructuración de pruebas automatizadas (`pytest`, `xUnit`, `Jasmine/Karma`), diagramación Mermaid C4 y revisión de consistencia documental.
+- **Criterio, diseño y validación humana del candidato:** definición de la arquitectura y ADRs, modelado de datos e invariantes de dominio (`Caso`/`Respuesta`, SLA, CSAT, máquina de estados), calibración del buscador híbrido (ajuste de pesos `0.70/0.30`, stopwords en español preservando códigos ERP y umbral `0.35`), endurecimiento de seguridad (JWT/RBAC, sanitización y bloqueo de *prompt injection*), resolución de incidencias de integración y ejecución/validación real de todas las suites y contenedores Docker.
+- **Privacidad:** todo el código, ejemplos y manuales son 100 % sintéticos; no se utilizaron datos reales ni información PII de clientes.
