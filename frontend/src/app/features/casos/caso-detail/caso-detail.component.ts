@@ -15,11 +15,20 @@ import {
   CasoDetalle,
   EstadoCaso,
   PRIORIDAD_INFO,
+  PRIORIDAD_LIST,
+  PrioridadCaso,
   ProblemDetailsResponse,
   Respuesta
 } from '../../../core/models/api.models';
 import { AuthService } from '../../../core/services/auth.service';
 import { CasosService } from '../../../core/services/casos.service';
+
+const PRIORIDAD_RANK: Record<PrioridadCaso, number> = {
+  Baja: 1,
+  Media: 2,
+  Alta: 3,
+  Critica: 4
+};
 
 /**
  * Vista de detalle del caso con señal reactiva, máquina de estados,
@@ -45,6 +54,17 @@ import { CasosService } from '../../../core/services/casos.service';
               >
                 Prioridad {{ c.prioridad }}
               </span>
+              @if (canChangePriority()) {
+                <button
+                  type="button"
+                  class="btn btn-soft btn-xs"
+                  data-testid="toggle-priority-btn"
+                  [disabled]="busy()"
+                  (click)="abrirPanelPrioridad()"
+                >
+                  {{ authService.isAnalista() ? '🔺 Ajustar prioridad' : '🔺 Elevar severidad' }}
+                </button>
+              }
               <span class="meta-text">
                 {{ c.clienteNombre }} · {{ c.fechaCreacion | date: 'dd/MM/yyyy HH:mm' }}
               </span>
@@ -83,6 +103,82 @@ import { CasosService } from '../../../core/services/casos.service';
             }
           </div>
         </header>
+
+        @if (priorityPanelOpen()) {
+          <form
+            [formGroup]="priorityForm"
+            (ngSubmit)="confirmarCambioPrioridad()"
+            class="priority-panel"
+            role="region"
+            aria-label="Cambio de prioridad"
+          >
+            <div class="priority-panel-head">
+              <strong>
+                {{ authService.isAnalista() ? 'Ajustar prioridad del caso' : 'Elevar severidad del caso' }}
+              </strong>
+              <span class="meta-text">
+                Prioridad actual: <strong>{{ c.prioridad }}</strong>
+              </span>
+            </div>
+
+            <div class="priority-field">
+              <label for="nuevaPrioridad">Nueva prioridad</label>
+              <select
+                id="nuevaPrioridad"
+                class="form-control"
+                formControlName="nuevaPrioridad"
+                (change)="onPrioritySelectChange($event)"
+              >
+                @for (p of availablePriorities(); track p) {
+                  <option [value]="p">
+                    {{ p }} — {{ prioridadInfoMap[p].etiqueta }}
+                  </option>
+                }
+              </select>
+              <small class="priority-help">{{ selectedPriorityGuide().descripcion }}</small>
+            </div>
+
+            <div class="priority-field">
+              <label for="justificacionPrioridad">
+                Motivo / impacto operativo del cambio de prioridad (mín. 10 caracteres)
+              </label>
+              <textarea
+                id="justificacionPrioridad"
+                rows="3"
+                class="form-control"
+                formControlName="justificacion"
+                placeholder="Describe el impacto operativo o razón técnica que justifica el cambio..."
+              ></textarea>
+              @if (
+                priorityForm.controls.justificacion.touched &&
+                priorityForm.controls.justificacion.invalid
+              ) {
+                <small class="field-error">
+                  La justificación es obligatoria y debe tener al menos 10 caracteres.
+                </small>
+              }
+            </div>
+
+            <div class="priority-panel-actions">
+              <button
+                type="submit"
+                class="btn btn-primary btn-sm"
+                data-testid="confirm-priority-btn"
+                [disabled]="busy()"
+              >
+                Confirmar cambio
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm"
+                [disabled]="busy()"
+                (click)="cerrarPanelPrioridad()"
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        }
 
         @if (deleteConfirmOpen()) {
           <div class="delete-confirm-banner" role="alertdialog" aria-label="Confirmar eliminación lógica">
@@ -497,6 +593,42 @@ import { CasosService } from '../../../core/services/casos.service';
         gap: 0.5rem;
         align-items: center;
       }
+      .btn-xs {
+        padding: 0.22rem 0.55rem;
+        font-size: 0.76rem;
+      }
+      .priority-panel {
+        display: grid;
+        gap: 0.75rem;
+        padding: 1rem;
+        border-radius: calc(var(--radius-card) * 0.8);
+        border: 1px solid var(--border-color);
+        background: var(--bg-surface-alt);
+      }
+      .priority-panel-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      .priority-field {
+        display: grid;
+        gap: 0.35rem;
+        label {
+          font-size: 0.84rem;
+          font-weight: 600;
+        }
+      }
+      .priority-help {
+        font-size: 0.78rem;
+        color: var(--text-secondary);
+      }
+      .priority-panel-actions {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
     `
   ]
 })
@@ -517,6 +649,7 @@ export class CasoDetailComponent implements OnDestroy {
       this.draftEdits.set({});
       this.replyForm.reset();
       this.cancelarEliminacion();
+      this.cerrarPanelPrioridad();
     }
   }
 
@@ -534,12 +667,42 @@ export class CasoDetailComponent implements OnDestroy {
   readonly draftEdits = signal<Record<string, string>>({});
   readonly deleteConfirmOpen = signal<boolean>(false);
   readonly countdownSeconds = signal<number>(3);
+  readonly priorityPanelOpen = signal<boolean>(false);
+  readonly selectedNewPriority = signal<PrioridadCaso>('Alta');
+  readonly prioridadInfoMap = PRIORIDAD_INFO;
 
   private countdownTimer: ReturnType<typeof setInterval> | null = null;
 
   ngOnDestroy(): void {
     this.clearCountdownTimer();
   }
+
+  readonly availablePriorities = computed<PrioridadCaso[]>(() => {
+    const current = this.casoSignal();
+    if (!current) {
+      return [];
+    }
+    if (this.authService.isAnalista()) {
+      return PRIORIDAD_LIST.filter((p) => p !== current.prioridad);
+    }
+    const currentRank = PRIORIDAD_RANK[current.prioridad];
+    return PRIORIDAD_LIST.filter((p) => PRIORIDAD_RANK[p] > currentRank);
+  });
+
+  readonly canChangePriority = computed<boolean>(() => {
+    const current = this.casoSignal();
+    return !!current && current.estado !== 'Cerrado' && this.availablePriorities().length > 0;
+  });
+
+  readonly selectedPriorityGuide = computed(() => PRIORIDAD_INFO[this.selectedNewPriority()]);
+
+  readonly priorityForm = this.fb.nonNullable.group({
+    nuevaPrioridad: ['Alta' as PrioridadCaso, [Validators.required]],
+    justificacion: [
+      '',
+      [Validators.required, Validators.minLength(10), Validators.maxLength(1000)]
+    ]
+  });
 
   readonly prioridadInfo = computed(() => {
     const prioridad = this.casoSignal()?.prioridad ?? 'Media';
@@ -698,6 +861,76 @@ export class CasoDetailComponent implements OnDestroy {
         this.errorMsg.set(this.extractErrorMessage(err));
       }
     });
+  }
+
+  abrirPanelPrioridad(): void {
+    const options = this.availablePriorities();
+    if (options.length === 0) {
+      return;
+    }
+
+    const defaultTarget = options[0];
+    this.selectedNewPriority.set(defaultTarget);
+    this.priorityForm.reset({
+      nuevaPrioridad: defaultTarget,
+      justificacion: ''
+    });
+    this.errorMsg.set('');
+    this.infoMsg.set('');
+    this.priorityPanelOpen.set(true);
+  }
+
+  cerrarPanelPrioridad(): void {
+    this.priorityPanelOpen.set(false);
+    this.priorityForm.reset({
+      nuevaPrioridad: 'Alta',
+      justificacion: ''
+    });
+  }
+
+  onPrioritySelectChange(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value as PrioridadCaso;
+    this.selectedNewPriority.set(value);
+  }
+
+  confirmarCambioPrioridad(): void {
+    const current = this.casoSignal();
+    if (!current) {
+      return;
+    }
+
+    if (this.priorityForm.invalid) {
+      this.priorityForm.markAllAsTouched();
+      return;
+    }
+
+    const { nuevaPrioridad, justificacion } = this.priorityForm.getRawValue();
+    const justificacionTrim = justificacion.trim();
+    if (justificacionTrim.length < 10) {
+      this.priorityForm.controls.justificacion.setErrors({ minlength: true });
+      this.priorityForm.markAllAsTouched();
+      return;
+    }
+
+    this.busy.set(true);
+    this.errorMsg.set('');
+    this.infoMsg.set('');
+
+    this.casosService
+      .cambiarPrioridad(current.id, nuevaPrioridad, justificacionTrim)
+      .subscribe({
+        next: (actualizado) => {
+          this.busy.set(false);
+          this.casoSignal.set(actualizado);
+          this.cerrarPanelPrioridad();
+          this.infoMsg.set(`Prioridad actualizada a ${actualizado.prioridad}.`);
+          this.casoActualizado.emit(actualizado);
+        },
+        error: (err: unknown) => {
+          this.busy.set(false);
+          this.errorMsg.set(this.extractErrorMessage(err));
+        }
+      });
   }
 
   iniciarEliminacion(): void {

@@ -28,6 +28,9 @@ public class Caso
     /// <summary>Fecha de creación del caso en formato UTC.</summary>
     public DateTime FechaCreacion { get; private set; }
 
+    /// <summary>Fecha UTC de la última actualización operativa del caso.</summary>
+    public DateTime? FechaActualizacion { get; private set; }
+
     /// <summary>Indica si el caso fue enviado a la papelera mediante borrado lógico.</summary>
     public bool Eliminado { get; private set; }
 
@@ -224,6 +227,56 @@ public class Caso
 
         Eliminado = false;
         FechaEliminacion = null;
+    }
+
+    /// <summary>
+    /// Ajusta o escala la prioridad del caso validando las restricciones por rol de usuario.
+    /// </summary>
+    public void CambiarPrioridad(PrioridadCaso nuevaPrioridad, string rolUsuario)
+    {
+        EnsureNotDeleted();
+
+        if (Estado == EstadoCaso.Cerrado)
+            throw new DomainException("No se puede cambiar la prioridad de un caso Cerrado.");
+
+        if (!Enum.IsDefined(nuevaPrioridad))
+            throw new DomainException("La prioridad especificada no es válida.");
+
+        if (nuevaPrioridad == Prioridad)
+            throw new DomainException("La nueva prioridad debe ser diferente a la actual.");
+
+        var esCliente = string.Equals(rolUsuario, nameof(RolUsuario.Cliente), StringComparison.OrdinalIgnoreCase);
+        var esAnalista = string.Equals(rolUsuario, nameof(RolUsuario.Analista), StringComparison.OrdinalIgnoreCase);
+
+        if (!esCliente && !esAnalista)
+            throw new DomainException("El rol actual no está autorizado para cambiar la prioridad del caso.");
+
+        if (esCliente && nuevaPrioridad <= Prioridad)
+            throw new DomainException("El cliente solo puede elevar la prioridad del caso hacia un nivel superior.");
+
+        Prioridad = nuevaPrioridad;
+        FechaActualizacion = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Registra una entrada de auditoría visible en el historial del caso sin alterar su estado actual.
+    /// </summary>
+    public Respuesta RegistrarAuditoria(string texto, string autorNombre)
+    {
+        EnsureNotDeleted();
+
+        if (Estado == EstadoCaso.Cerrado)
+            throw new DomainException("No se pueden registrar eventos en un caso Cerrado.");
+
+        var evento = new Respuesta(
+            casoId: Id,
+            texto: texto,
+            esGeneradaPorIA: false,
+            aprobadaPorAnalista: true,
+            autorNombre: autorNombre);
+
+        _respuestas.Add(evento);
+        return evento;
     }
 
     private void EnsureNotDeleted()

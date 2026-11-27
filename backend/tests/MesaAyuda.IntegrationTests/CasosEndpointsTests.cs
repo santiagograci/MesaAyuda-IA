@@ -307,6 +307,80 @@ public class CasosEndpointsTests : IClassFixture<CustomWebApplicationFactory>
         Assert.Equal(0, idempotentBody!.CasosCreados);
     }
 
+    [Fact]
+    public async Task PatchPrioridad_ClienteElevaYAnalistaAjusta_ConValidacionesYAuditoria()
+    {
+        using var client = _factory.CreateClient();
+
+        var loginCliente = await LoginAsync(client, "cliente@empresa.com", "Ofima2026*");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", loginCliente.Token);
+
+        var createRes = await client.PostAsJsonAsync(
+            "/api/casos",
+            new CrearCasoRequest(
+                $"Escalamiento prioridad {Guid.NewGuid():N}",
+                "Prueba de integración para validar elevación de prioridad y trazabilidad en historial.",
+                "Media"));
+        Assert.Equal(HttpStatusCode.Created, createRes.StatusCode);
+        var caso = await createRes.Content.ReadFromJsonAsync<CasoDetalleDto>(JsonOptions);
+        Assert.NotNull(caso);
+
+        // Cliente puede elevar Media -> Critica con justificación válida
+        var elevarRes = await client.PatchAsJsonAsync(
+            $"/api/casos/{caso!.Id}/prioridad",
+            new
+            {
+                nuevaPrioridad = "Critica",
+                justificacion = "Impacta la emisión de facturas electrónicas de cierre diario."
+            });
+        Assert.Equal(HttpStatusCode.OK, elevarRes.StatusCode);
+        var elevado = await elevarRes.Content.ReadFromJsonAsync<CasoDetalleDto>(JsonOptions);
+        Assert.NotNull(elevado);
+        Assert.Equal("Critica", elevado!.Prioridad);
+        Assert.Contains(
+            elevado.Respuestas,
+            r => r.Texto.Contains("[Cambio de Prioridad: Media ➔ Critica]", StringComparison.Ordinal));
+
+        // Cliente no puede reducir Critica -> Baja
+        var degradarRes = await client.PatchAsJsonAsync(
+            $"/api/casos/{caso.Id}/prioridad",
+            new
+            {
+                nuevaPrioridad = "Baja",
+                justificacion = "Intento no autorizado de bajar severidad desde rol Cliente."
+            });
+        Assert.Equal(HttpStatusCode.BadRequest, degradarRes.StatusCode);
+
+        // Justificación menor a 10 caracteres retorna 400 BadRequest
+        var cortaRes = await client.PatchAsJsonAsync(
+            $"/api/casos/{caso.Id}/prioridad",
+            new
+            {
+                nuevaPrioridad = "Alta",
+                justificacion = "Muy corta"
+            });
+        Assert.Equal(HttpStatusCode.BadRequest, cortaRes.StatusCode);
+
+        // Analista sí puede recalibrar Critica -> Media
+        var loginAnalista = await LoginAsync(client, "analista@ofima.com", "Ofima2026*");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", loginAnalista.Token);
+
+        var ajustarRes = await client.PatchAsJsonAsync(
+            $"/api/casos/{caso.Id}/prioridad",
+            new
+            {
+                nuevaPrioridad = "Media",
+                justificacion = "Se confirmó workaround operativo mientras se aplica el parche."
+            });
+        Assert.Equal(HttpStatusCode.OK, ajustarRes.StatusCode);
+        var ajustado = await ajustarRes.Content.ReadFromJsonAsync<CasoDetalleDto>(JsonOptions);
+        Assert.NotNull(ajustado);
+        Assert.Equal("Media", ajustado!.Prioridad);
+        Assert.Contains(
+            ajustado.Respuestas,
+            r => r.Texto.Contains("[Cambio de Prioridad: Critica ➔ Media]", StringComparison.Ordinal));
+    }
+
     private static async Task<LoginResponse> LoginAsync(HttpClient client, string email, string password)
     {
         var response = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, password));

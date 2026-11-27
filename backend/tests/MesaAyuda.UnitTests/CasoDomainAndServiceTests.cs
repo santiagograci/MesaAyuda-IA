@@ -201,6 +201,79 @@ public class CasoDomainAndServiceTests
         Assert.Equal(0, segunda.CasosCreados);
     }
 
+    [Fact]
+    public async Task CambiarPrioridad_ComoCliente_ElevaConAuditoria_YRechazaDegradacion()
+    {
+        var cliente = new Usuario("Carlos Mendoza", "cliente@empresa.com", "hash", RolUsuario.Cliente);
+        var caso = new Caso(
+            "Error en reporte de cartera",
+            "Los saldos por tercero presentan diferencia temporal en pantalla.",
+            PrioridadCaso.Media,
+            cliente.Id);
+        var repo = new FakeCasoRepository(new[] { caso });
+        var userRepo = new FakeUsuarioRepository(new[] { cliente });
+        var uow = new FakeUnitOfWork();
+        var service = BuildCasoService(repo, userRepo, uow, new StubRagServiceClient());
+
+        var actualizado = await service.CambiarPrioridadAsync(
+            caso.Id,
+            new CambiarPrioridadRequest(
+                PrioridadCaso.Critica,
+                "El módulo de facturación quedó bloqueado para toda la operación."),
+            cliente.Id,
+            "Cliente",
+            cliente.Nombre);
+
+        Assert.Equal("Critica", actualizado.Prioridad);
+        Assert.Equal("Abierto", actualizado.Estado);
+        Assert.NotNull(caso.FechaActualizacion);
+        var audit = Assert.Single(actualizado.Respuestas);
+        Assert.Contains("[Cambio de Prioridad: Media ➔ Critica]", audit.Texto);
+        Assert.Contains("El módulo de facturación quedó bloqueado", audit.Texto);
+        Assert.False(audit.EsGeneradaPorIA);
+        Assert.True(audit.AprobadaPorAnalista);
+
+        await Assert.ThrowsAsync<DomainException>(() =>
+            service.CambiarPrioridadAsync(
+                caso.Id,
+                new CambiarPrioridadRequest(PrioridadCaso.Baja, "Justificación suficientemente larga para intentar bajar."),
+                cliente.Id,
+                "Cliente"));
+
+        await Assert.ThrowsAsync<DomainException>(() =>
+            service.CambiarPrioridadAsync(
+                caso.Id,
+                new CambiarPrioridadRequest(PrioridadCaso.Alta, "Corta"),
+                cliente.Id,
+                "Cliente"));
+    }
+
+    [Fact]
+    public async Task CambiarPrioridad_ComoAnalista_PermiteAjustarEnCualquierDireccion()
+    {
+        var caso = new Caso(
+            "Incidencia menor de visualización",
+            "Etiqueta desalineada en consulta de inventario.",
+            PrioridadCaso.Alta,
+            Guid.NewGuid());
+        var repo = new FakeCasoRepository(new[] { caso });
+        var uow = new FakeUnitOfWork();
+        var service = BuildCasoService(repo, new FakeUsuarioRepository(), uow, new StubRagServiceClient());
+
+        var ajustado = await service.CambiarPrioridadAsync(
+            caso.Id,
+            new CambiarPrioridadRequest(
+                PrioridadCaso.Baja,
+                "Tras evaluación técnica no bloquea operación ni facturación."),
+            Guid.NewGuid(),
+            "Analista",
+            "Santiago Graciano - Analista Soporte");
+
+        Assert.Equal("Baja", ajustado.Prioridad);
+        var audit = Assert.Single(ajustado.Respuestas);
+        Assert.Contains("[Cambio de Prioridad: Alta ➔ Baja]", audit.Texto);
+    }
+
     private static CasoService BuildCasoService(
         FakeCasoRepository casoRepo,
         FakeUsuarioRepository usuarioRepo,

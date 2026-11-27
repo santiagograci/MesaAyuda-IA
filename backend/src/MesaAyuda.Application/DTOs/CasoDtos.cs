@@ -1,3 +1,6 @@
+using System.ComponentModel.DataAnnotations;
+using MesaAyuda.Domain.Enums;
+
 namespace MesaAyuda.Application.DTOs;
 
 /// <summary>
@@ -89,3 +92,13 @@ public record CasoEliminadoDto(
 /// Resultado de restaurar los casos de demostración predeterminados en la base de datos.
 /// </summary>
 public record RestaurarDemoResponse(int CasosCreados, string Mensaje);
+
+/// <summary>
+/// Solicitud para escalar o ajustar la prioridad de un caso con justificación obligatoria.
+/// </summary>
+public record CambiarPrioridadRequest(
+    [Required(ErrorMessage = "La nueva prioridad es obligatoria.")]
+    PrioridadCaso NuevaPrioridad,
+    [Required(ErrorMessage = "La justificación es obligatoria.")]
+    [MinLength(10, ErrorMessage = "La justificación debe tener al menos 10 caracteres.")]
+    string Justificacion);

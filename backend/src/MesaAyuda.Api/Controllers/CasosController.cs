@@ -158,6 +158,30 @@ public class CasosController : ControllerBase
     }
 
     /// <summary>
+    /// Escala o ajusta la prioridad de un caso con justificación obligatoria y trazabilidad en el historial.
+    /// </summary>
+    [HttpPatch("{id:guid}/prioridad")]
+    [ProducesResponseType(typeof(CasoDetalleDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<CasoDetalleDto>> CambiarPrioridad(
+        Guid id,
+        [FromBody] CambiarPrioridadRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var (usuarioId, rol, nombre) = GetCurrentUser();
+        var actualizado = await _casoService.CambiarPrioridadAsync(
+            id,
+            request,
+            usuarioId,
+            rol,
+            nombre,
+            cancellationToken);
+        return Ok(actualizado);
+    }
+
+    /// <summary>
     /// Ejecuta la máquina de estados del dominio sobre un caso validando sus invariantes.
     /// </summary>
     [HttpPatch("{id:guid}/estado")]

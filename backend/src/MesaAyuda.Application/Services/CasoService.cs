@@ -279,6 +279,40 @@ public class CasoService : ICasoService
     }
 
     /// <inheritdoc />
+    public async Task<CasoDetalleDto> CambiarPrioridadAsync(
+        Guid id,
+        CambiarPrioridadRequest request,
+        Guid usuarioId,
+        string rol,
+        string? nombreUsuario = null,
+        CancellationToken cancellationToken = default)
+    {
+        var justificacion = request.Justificacion?.Trim() ?? string.Empty;
+        if (justificacion.Length < 10)
+            throw new DomainException("La justificación debe tener al menos 10 caracteres.");
+
+        var caso = await GetCasoOrThrowAsync(id, cancellationToken);
+        EnsureOwnershipOrAnalyst(caso, usuarioId, rol);
+
+        var prioridadAnterior = caso.Prioridad;
+        caso.CambiarPrioridad(request.NuevaPrioridad, rol);
+
+        var autorNombre = !string.IsNullOrWhiteSpace(nombreUsuario)
+            ? nombreUsuario.Trim()
+            : (await _usuarioRepository.GetByIdAsync(usuarioId, cancellationToken))?.Nombre ?? rol;
+
+        var textoAuditoria =
+            $"🔺 [Cambio de Prioridad: {prioridadAnterior} ➔ {request.NuevaPrioridad}] Justificación: {justificacion}";
+
+        var auditoria = caso.RegistrarAuditoria(textoAuditoria, autorNombre);
+        await _casoRepository.AddRespuestaAsync(auditoria, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        var esAnalista = string.Equals(rol, nameof(RolUsuario.Analista), StringComparison.OrdinalIgnoreCase);
+        return MapToDetalleDto(caso, soloPublicadas: !esAnalista);
+    }
+
+    /// <inheritdoc />
     public async Task<RespuestaDto> AgregarRespuestaHumanaAsync(
         Guid id,
         CrearRespuestaRequest request,

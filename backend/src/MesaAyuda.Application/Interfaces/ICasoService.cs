@@ -68,6 +68,15 @@ public interface ICasoService
         string rol,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Escala o ajusta la prioridad de un caso registrando justificación obligatoria en su historial.</summary>
+    Task<CasoDetalleDto> CambiarPrioridadAsync(
+        Guid id,
+        CambiarPrioridadRequest request,
+        Guid usuarioId,
+        string rol,
+        string? nombreUsuario = null,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Registra una respuesta humana y la publica en el historial del caso.</summary>
     Task<RespuestaDto> AgregarRespuestaHumanaAsync(
         Guid id,

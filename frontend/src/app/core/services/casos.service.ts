@@ -5,6 +5,7 @@ import {
   ActualizarCasoRequest,
   AprobarSugerenciaRequest,
   CambiarEstadoRequest,
+  CambiarPrioridadRequest,
   CasoDetalle,
   CasoEliminado,
   CasoResumen,
@@ -12,6 +13,7 @@ import {
   CrearRespuestaRequest,
   EstadoCaso,
   PagedResult,
+  PrioridadCaso,
   Respuesta,
   RestaurarDemoResponse
 } from '../models/api.models';
@@ -80,6 +82,16 @@ export class CasosService {
   cambiarEstado(id: string, nuevoEstado: EstadoCaso): Observable<CasoDetalle> {
     const body: CambiarEstadoRequest = { nuevoEstado };
     return this.http.patch<CasoDetalle>(`${this.baseUrl}/${id}/estado`, body);
+  }
+
+  /** Escala o ajusta la prioridad del caso registrando justificación en el historial. */
+  cambiarPrioridad(
+    id: string,
+    nuevaPrioridad: PrioridadCaso,
+    justificacion: string
+  ): Observable<CasoDetalle> {
+    const body: CambiarPrioridadRequest = { nuevaPrioridad, justificacion };
+    return this.http.patch<CasoDetalle>(`${this.baseUrl}/${id}/prioridad`, body);
   }
 
   /** Agrega una respuesta humana publicada al historial del caso. */

@@ -86,6 +86,8 @@ public class AppDbContext : DbContext
             builder.Property(c => c.FechaCreacion)
                 .IsRequired();
 
+            builder.Property(c => c.FechaActualizacion);
+
             builder.Property(c => c.Eliminado)
                 .IsRequired()
                 .HasDefaultValue(false);

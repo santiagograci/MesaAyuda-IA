@@ -6,10 +6,11 @@ import { AuthService } from '../../../core/services/auth.service';
 import { CasosService } from '../../../core/services/casos.service';
 import { CasoDetailComponent } from './caso-detail.component';
 
-describe('CasoDetailComponent (Protección contra borrado con cuenta regresiva)', () => {
+describe('CasoDetailComponent (Borrado con cuenta regresiva y escalamiento de prioridad)', () => {
   let fixture: ComponentFixture<CasoDetailComponent>;
   let component: CasoDetailComponent;
   let casosServiceSpy: jasmine.SpyObj<CasosService>;
+  let isAnalistaSignal: ReturnType<typeof signal<boolean>>;
 
   const mockCaso: CasoDetalle = {
     id: 'caso-delete-1',
@@ -24,11 +25,15 @@ describe('CasoDetailComponent (Protección contra borrado con cuenta regresiva)'
   };
 
   beforeEach(async () => {
-    casosServiceSpy = jasmine.createSpyObj<CasosService>('CasosService', ['eliminarCaso']);
+    isAnalistaSignal = signal(true);
+    casosServiceSpy = jasmine.createSpyObj<CasosService>('CasosService', [
+      'eliminarCaso',
+      'cambiarPrioridad'
+    ]);
     casosServiceSpy.eliminarCaso.and.returnValue(of(void 0));
 
     const authMock = {
-      isAnalista: signal(true),
+      isAnalista: isAnalistaSignal,
       isAuthenticated: signal(true),
       currentUser: signal(null)
     };
@@ -88,4 +93,109 @@ describe('CasoDetailComponent (Protección contra borrado con cuenta regresiva)'
     expect(casosServiceSpy.eliminarCaso).toHaveBeenCalledWith('caso-delete-1');
     expect(elimSpy).toHaveBeenCalledWith('caso-delete-1');
   }));
+
+  it('debe permitir al Cliente elevar severidad solo a niveles superiores y emitir casoActualizado', () => {
+    isAnalistaSignal.set(false);
+    component.caso = { ...mockCaso, prioridad: 'Media' };
+    fixture.detectChanges();
+
+    const updatedDto: CasoDetalle = {
+      ...mockCaso,
+      prioridad: 'Critica',
+      respuestas: [
+        {
+          id: 'resp-audit-1',
+          texto: '🔺 [Cambio de Prioridad: Media ➔ Critica] Justificación: Bloqueo completo de facturación.',
+          esGeneradaPorIA: false,
+          aprobadaPorAnalista: true,
+          autorNombre: 'Carlos Mendoza',
+          fuentesCitadas: [],
+          fechaCreacion: '2026-11-26T16:00:00Z'
+        }
+      ]
+    };
+    casosServiceSpy.cambiarPrioridad.and.returnValue(of(updatedDto));
+    const updatedSpy = spyOn(component.casoActualizado, 'emit');
+
+    const el: HTMLElement = fixture.nativeElement;
+    const toggleBtn = el.querySelector('[data-testid="toggle-priority-btn"]') as HTMLButtonElement;
+    expect(toggleBtn.textContent).toContain('Elevar severidad');
+
+    toggleBtn.click();
+    fixture.detectChanges();
+
+    const options = Array.from(el.querySelectorAll('#nuevaPrioridad option')).map(
+      (o) => (o as HTMLOptionElement).value
+    );
+    expect(options).toEqual(['Alta', 'Critica']);
+
+    component.priorityForm.setValue({
+      nuevaPrioridad: 'Critica',
+      justificacion: 'Bloqueo completo de facturación.'
+    });
+    const confirmBtn = el.querySelector('[data-testid="confirm-priority-btn"]') as HTMLButtonElement;
+    confirmBtn.click();
+    fixture.detectChanges();
+
+    expect(casosServiceSpy.cambiarPrioridad).toHaveBeenCalledWith(
+      'caso-delete-1',
+      'Critica',
+      'Bloqueo completo de facturación.'
+    );
+    expect(updatedSpy).toHaveBeenCalledWith(updatedDto);
+    expect(el.textContent).toContain('[Cambio de Prioridad: Media ➔ Critica]');
+
+    // En Critica el Cliente ya no ve el botón de elevar severidad
+    expect(el.querySelector('[data-testid="toggle-priority-btn"]')).toBeNull();
+  });
+
+  it('debe permitir al Analista ajustar la prioridad en cualquier dirección distinta a la actual', () => {
+    isAnalistaSignal.set(true);
+    component.caso = { ...mockCaso, prioridad: 'Alta' };
+    fixture.detectChanges();
+
+    const adjustedDto: CasoDetalle = {
+      ...mockCaso,
+      prioridad: 'Baja',
+      respuestas: [
+        {
+          id: 'resp-audit-2',
+          texto: '🔺 [Cambio de Prioridad: Alta ➔ Baja] Justificación: Existe alternativa temporal.',
+          esGeneradaPorIA: false,
+          aprobadaPorAnalista: true,
+          autorNombre: 'Santiago Graciano',
+          fuentesCitadas: [],
+          fechaCreacion: '2026-11-26T16:05:00Z'
+        }
+      ]
+    };
+    casosServiceSpy.cambiarPrioridad.and.returnValue(of(adjustedDto));
+
+    const el: HTMLElement = fixture.nativeElement;
+    const toggleBtn = el.querySelector('[data-testid="toggle-priority-btn"]') as HTMLButtonElement;
+    expect(toggleBtn.textContent).toContain('Ajustar prioridad');
+
+    toggleBtn.click();
+    fixture.detectChanges();
+
+    const options = Array.from(el.querySelectorAll('#nuevaPrioridad option')).map(
+      (o) => (o as HTMLOptionElement).value
+    );
+    expect(options).toEqual(['Baja', 'Media', 'Critica']);
+
+    component.priorityForm.setValue({
+      nuevaPrioridad: 'Baja',
+      justificacion: 'Existe alternativa temporal.'
+    });
+    const confirmBtn = el.querySelector('[data-testid="confirm-priority-btn"]') as HTMLButtonElement;
+    confirmBtn.click();
+    fixture.detectChanges();
+
+    expect(casosServiceSpy.cambiarPrioridad).toHaveBeenCalledWith(
+      'caso-delete-1',
+      'Baja',
+      'Existe alternativa temporal.'
+    );
+    expect(el.textContent).toContain('[Cambio de Prioridad: Alta ➔ Baja]');
+  });
 });

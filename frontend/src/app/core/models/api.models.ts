@@ -169,3 +169,9 @@ export interface RestaurarDemoResponse {
   casosCreados: number;
   mensaje: string;
 }
+
+/** Payload para escalar o ajustar la prioridad de un caso con justificación. */
+export interface CambiarPrioridadRequest {
+  nuevaPrioridad: PrioridadCaso;
+  justificacion: string;
+}
