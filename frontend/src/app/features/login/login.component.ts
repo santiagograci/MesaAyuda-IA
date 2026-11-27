@@ -1,7 +1,8 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { DemoUser } from '../../core/models/api.models';
 import { AuthService } from '../../core/services/auth.service';
 import { OfimaLogoComponent } from '../../shared/ofima-logo/ofima-logo.component';
@@ -43,6 +44,12 @@ const FALLBACK_DEMO_USERS: DemoUser[] = [
           <app-ofima-logo variant="full" />
           <p>Ingresa con tus credenciales o usa un acceso rápido de demostración.</p>
         </header>
+
+        @if (idleNotice()) {
+          <div class="idle-notice" role="status">
+            🔒 Tu sesión se cerró automáticamente tras 10 minutos de inactividad por seguridad.
+          </div>
+        }
 
         <form [formGroup]="form" (ngSubmit)="submit()" class="login-form">
           <div class="field">
@@ -174,6 +181,16 @@ const FALLBACK_DEMO_USERS: DemoUser[] = [
         text-overflow: ellipsis;
         white-space: nowrap;
       }
+      .idle-notice {
+        margin-bottom: 1rem;
+        padding: 0.75rem 0.9rem;
+        border-radius: calc(var(--radius-card) * 0.75);
+        background: var(--warn-bg);
+        color: var(--warn-text);
+        border: 1px solid var(--border-color);
+        font-size: 0.85rem;
+        font-weight: 500;
+      }
     `
   ]
 })
@@ -181,9 +198,12 @@ export class LoginComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly loading = signal<boolean>(false);
   readonly errorMsg = signal<string>('');
+  readonly idleNotice = signal<boolean>(false);
   readonly demoUsers = signal<DemoUser[]>(FALLBACK_DEMO_USERS);
 
   readonly form = this.fb.nonNullable.group({
@@ -196,6 +216,12 @@ export class LoginComponent implements OnInit {
       void this.router.navigate(['/casos']);
       return;
     }
+
+    this.route.queryParamMap
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((params) => {
+        this.idleNotice.set(params.get('reason') === 'idle');
+      });
 
     this.authService.getDemoUsers().subscribe({
       next: (users) => {
@@ -225,6 +251,7 @@ export class LoginComponent implements OnInit {
 
     this.loading.set(true);
     this.errorMsg.set('');
+    this.idleNotice.set(false);
 
     this.authService.login(this.form.getRawValue()).subscribe({
       next: () => {
