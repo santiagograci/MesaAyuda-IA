@@ -93,7 +93,7 @@ public class CasosController : ControllerBase
     }
 
     /// <summary>
-    /// Elimina un caso de soporte (acción exclusiva del rol Analista).
+    /// Envía un caso de soporte a la papelera mediante borrado lógico (acción exclusiva del rol Analista).
     /// </summary>
     [HttpDelete("{id:guid}")]
     [Authorize(Roles = "Analista")]
@@ -107,6 +107,54 @@ public class CasosController : ControllerBase
         var (_, rol, _) = GetCurrentUser();
         await _casoService.EliminarCasoAsync(id, rol, cancellationToken);
         return NoContent();
+    }
+
+    /// <summary>
+    /// Lista los casos almacenados en la papelera de reciclaje (acción exclusiva del rol Analista).
+    /// </summary>
+    [HttpGet("papelera")]
+    [Authorize(Roles = "Analista")]
+    [ProducesResponseType(typeof(IReadOnlyList<CasoEliminadoDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<IReadOnlyList<CasoEliminadoDto>>> ListarPapelera(
+        CancellationToken cancellationToken = default)
+    {
+        var (_, rol, _) = GetCurrentUser();
+        var eliminados = await _casoService.ListarPapeleraAsync(rol, cancellationToken);
+        return Ok(eliminados);
+    }
+
+    /// <summary>
+    /// Restaura un caso desde la papelera de reciclaje hacia la bandeja activa (acción exclusiva del rol Analista).
+    /// </summary>
+    [HttpPost("{id:guid}/restaurar")]
+    [Authorize(Roles = "Analista")]
+    [ProducesResponseType(typeof(CasoDetalleDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<CasoDetalleDto>> Restaurar(
+        Guid id,
+        CancellationToken cancellationToken = default)
+    {
+        var (_, rol, _) = GetCurrentUser();
+        var restaurado = await _casoService.RestaurarCasoAsync(id, rol, cancellationToken);
+        return Ok(restaurado);
+    }
+
+    /// <summary>
+    /// Recrea los 3 casos de demostración predeterminados si fueron eliminados (acción exclusiva del rol Analista).
+    /// </summary>
+    [HttpPost("restaurar-demo")]
+    [Authorize(Roles = "Analista")]
+    [ProducesResponseType(typeof(RestaurarDemoResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<RestaurarDemoResponse>> RestaurarDemo(
+        CancellationToken cancellationToken = default)
+    {
+        var (_, rol, _) = GetCurrentUser();
+        var resultado = await _casoService.RestaurarDatosDemoAsync(rol, cancellationToken);
+        return Ok(resultado);
     }
 
     /// <summary>

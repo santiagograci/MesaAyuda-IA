@@ -4,6 +4,7 @@ import {
   Component,
   EventEmitter,
   Input,
+  OnDestroy,
   Output,
   computed,
   inject,
@@ -74,14 +75,45 @@ import { CasosService } from '../../../core/services/casos.service';
               <button
                 type="button"
                 class="btn btn-danger btn-sm"
-                [disabled]="busy()"
-                (click)="eliminar()"
+                [disabled]="busy() || deleteConfirmOpen()"
+                (click)="iniciarEliminacion()"
               >
                 Eliminar
               </button>
             }
           </div>
         </header>
+
+        @if (deleteConfirmOpen()) {
+          <div class="delete-confirm-banner" role="alertdialog" aria-label="Confirmar eliminación lógica">
+            <p class="delete-confirm-text">
+              ⚠️ ¿Estás seguro de eliminar este caso? Pasará a la papelera de reciclaje.
+            </p>
+            <div class="delete-confirm-actions">
+              <button
+                type="button"
+                class="btn btn-danger btn-sm"
+                data-testid="confirm-delete-btn"
+                [disabled]="busy() || countdownSeconds() > 0"
+                (click)="confirmarEliminacion()"
+              >
+                @if (countdownSeconds() > 0) {
+                  Confirmar Eliminación ({{ countdownSeconds() }}s)
+                } @else {
+                  Sí, eliminar caso
+                }
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm"
+                [disabled]="busy()"
+                (click)="cancelarEliminacion()"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        }
 
         <div class="description-box">
           <p>{{ c.descripcion }}</p>
@@ -443,10 +475,32 @@ import { CasosService } from '../../../core/services/casos.service';
         color: var(--danger-text);
         font-size: 0.78rem;
       }
+      .delete-confirm-banner {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.85rem 1rem;
+        border-radius: calc(var(--radius-card) * 0.75);
+        border: 1px solid var(--danger-border, #f59e0b);
+        background: var(--danger-soft, rgba(239, 68, 68, 0.1));
+      }
+      .delete-confirm-text {
+        margin: 0;
+        font-size: 0.86rem;
+        font-weight: 600;
+        color: var(--danger-text, #b91c1c);
+      }
+      .delete-confirm-actions {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+      }
     `
   ]
 })
-export class CasoDetailComponent {
+export class CasoDetailComponent implements OnDestroy {
   private readonly fb = inject(FormBuilder);
   private readonly casosService = inject(CasosService);
   readonly authService = inject(AuthService);
@@ -462,6 +516,7 @@ export class CasoDetailComponent {
       this.infoMsg.set('');
       this.draftEdits.set({});
       this.replyForm.reset();
+      this.cancelarEliminacion();
     }
   }
 
@@ -477,6 +532,14 @@ export class CasoDetailComponent {
   readonly errorMsg = signal<string>('');
   readonly infoMsg = signal<string>('');
   readonly draftEdits = signal<Record<string, string>>({});
+  readonly deleteConfirmOpen = signal<boolean>(false);
+  readonly countdownSeconds = signal<number>(3);
+
+  private countdownTimer: ReturnType<typeof setInterval> | null = null;
+
+  ngOnDestroy(): void {
+    this.clearCountdownTimer();
+  }
 
   readonly prioridadInfo = computed(() => {
     const prioridad = this.casoSignal()?.prioridad ?? 'Media';
@@ -637,9 +700,31 @@ export class CasoDetailComponent {
     });
   }
 
-  eliminar(): void {
+  iniciarEliminacion(): void {
+    this.clearCountdownTimer();
+    this.deleteConfirmOpen.set(true);
+    this.countdownSeconds.set(3);
+
+    this.countdownTimer = setInterval(() => {
+      const remaining = this.countdownSeconds();
+      if (remaining <= 1) {
+        this.countdownSeconds.set(0);
+        this.clearCountdownTimer();
+      } else {
+        this.countdownSeconds.set(remaining - 1);
+      }
+    }, 1000);
+  }
+
+  cancelarEliminacion(): void {
+    this.clearCountdownTimer();
+    this.deleteConfirmOpen.set(false);
+    this.countdownSeconds.set(3);
+  }
+
+  confirmarEliminacion(): void {
     const current = this.casoSignal();
-    if (!current) {
+    if (!current || this.countdownSeconds() > 0) {
       return;
     }
 
@@ -649,6 +734,7 @@ export class CasoDetailComponent {
     this.casosService.eliminarCaso(current.id).subscribe({
       next: () => {
         this.busy.set(false);
+        this.cancelarEliminacion();
         this.casoEliminado.emit(current.id);
       },
       error: (err: unknown) => {
@@ -656,6 +742,13 @@ export class CasoDetailComponent {
         this.errorMsg.set(this.extractErrorMessage(err));
       }
     });
+  }
+
+  private clearCountdownTimer(): void {
+    if (this.countdownTimer !== null) {
+      clearInterval(this.countdownTimer);
+      this.countdownTimer = null;
+    }
   }
 
   private reloadCaso(casoId: string): void {

@@ -36,12 +36,20 @@ namespace MesaAyuda.Infrastructure.Persistence.Migrations
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
 
+                    b.Property<bool>("Eliminado")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("Estado")
                         .IsRequired()
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
 
                     b.Property<DateTime>("FechaCreacion")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("FechaEliminacion")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Prioridad")
@@ -57,6 +65,8 @@ namespace MesaAyuda.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ClienteId");
+
+                    b.HasIndex("Eliminado");
 
                     b.HasIndex("Estado");
 

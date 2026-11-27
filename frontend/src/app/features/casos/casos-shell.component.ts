@@ -1,5 +1,5 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { CasoDetalle, CasoResumen, EstadoCaso } from '../../core/models/api.models';
+import { CasoDetalle, CasoEliminado, CasoResumen, EstadoCaso } from '../../core/models/api.models';
 import { AuthService } from '../../core/services/auth.service';
 import { CasosService } from '../../core/services/casos.service';
 import { OfimaLogoComponent } from '../../shared/ofima-logo/ofima-logo.component';
@@ -55,14 +55,26 @@ import { CasosListComponent } from './casos-list/casos-list.component';
           [totalPages]="totalPages()"
           [totalCount]="totalCount()"
           [loading]="listLoading()"
+          [isAnalista]="authService.isAnalista()"
+          [papeleraMode]="papeleraMode()"
+          [papeleraCasos]="papeleraCasos()"
+          [papeleraCount]="papeleraCasos().length"
+          [restoringId]="restoringId()"
+          [restoringDemo]="restoringDemo()"
           (selectCaso)="selectCaso($event)"
           (estadoFilterChange)="onEstadoFilterChange($event)"
           (pageChange)="onPageChange($event)"
+          (togglePapelera)="onTogglePapelera($event)"
+          (restaurarCaso)="onRestaurarCaso($event)"
+          (restaurarDemo)="onRestaurarDemo()"
         />
 
         <div class="detail-pane">
           @if (errorMsg()) {
             <div class="alert-error" role="alert">{{ errorMsg() }}</div>
+          }
+          @if (infoMsg()) {
+            <div class="alert-info" role="status">{{ infoMsg() }}</div>
           }
 
           @if (creating()) {
@@ -100,7 +112,8 @@ import { CasosListComponent } from './casos-list/casos-list.component';
         align-items: center;
         flex-wrap: wrap;
         gap: 0.75rem;
-        padding: 0.7rem 1.25rem;
+        padding: 0.7rem 1.25rem 0.7rem 1.5rem;
+        overflow: visible;
         border-radius: 0;
         border-left: 0;
         border-right: 0;
@@ -154,13 +167,22 @@ export class CasosShellComponent implements OnInit {
   readonly totalPages = signal<number>(1);
   readonly totalCount = signal<number>(0);
 
+  readonly papeleraMode = signal<boolean>(false);
+  readonly papeleraCasos = signal<CasoEliminado[]>([]);
+  readonly restoringId = signal<string | null>(null);
+  readonly restoringDemo = signal<boolean>(false);
+
   readonly listLoading = signal<boolean>(false);
   readonly detailLoading = signal<boolean>(false);
   readonly creating = signal<boolean>(false);
   readonly errorMsg = signal<string>('');
+  readonly infoMsg = signal<string>('');
 
   ngOnInit(): void {
     this.loadCasos(true);
+    if (this.authService.isAnalista()) {
+      this.loadPapelera();
+    }
   }
 
   openCreate(): void {
@@ -211,7 +233,72 @@ export class CasosShellComponent implements OnInit {
 
   onCasoEliminado(): void {
     this.selectedCaso.set(null);
+    this.infoMsg.set('Caso enviado a la papelera de reciclaje.');
     this.loadCasos(true);
+    if (this.authService.isAnalista()) {
+      this.loadPapelera();
+    }
+  }
+
+  onTogglePapelera(active: boolean): void {
+    this.papeleraMode.set(active);
+    this.creating.set(false);
+    this.infoMsg.set('');
+    if (active) {
+      this.loadPapelera();
+    }
+  }
+
+  onRestaurarCaso(id: string): void {
+    this.restoringId.set(id);
+    this.errorMsg.set('');
+    this.infoMsg.set('');
+
+    this.casosService.restaurarCaso(id).subscribe({
+      next: (restaurado) => {
+        this.restoringId.set(null);
+        this.papeleraMode.set(false);
+        this.selectedCaso.set(restaurado);
+        this.infoMsg.set(`Caso "${restaurado.titulo}" restaurado desde la papelera.`);
+        this.loadPapelera();
+        this.loadCasos(false);
+      },
+      error: () => {
+        this.restoringId.set(null);
+        this.errorMsg.set('No se pudo restaurar el caso desde la papelera.');
+      }
+    });
+  }
+
+  onRestaurarDemo(): void {
+    this.restoringDemo.set(true);
+    this.errorMsg.set('');
+    this.infoMsg.set('');
+
+    this.casosService.restaurarDatosDemo().subscribe({
+      next: (res) => {
+        this.restoringDemo.set(false);
+        this.papeleraMode.set(false);
+        this.infoMsg.set(res.mensaje);
+        this.loadPapelera();
+        this.loadCasos(true);
+      },
+      error: () => {
+        this.restoringDemo.set(false);
+        this.errorMsg.set('No se pudieron restaurar los casos de demostración.');
+      }
+    });
+  }
+
+  private loadPapelera(): void {
+    this.casosService.listarPapelera().subscribe({
+      next: (items) => {
+        this.papeleraCasos.set(items);
+      },
+      error: () => {
+        this.errorMsg.set('No se pudo consultar la papelera de reciclaje.');
+      }
+    });
   }
 
   private loadCasos(autoSelectFirst: boolean): void {

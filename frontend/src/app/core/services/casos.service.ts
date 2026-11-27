@@ -6,12 +6,14 @@ import {
   AprobarSugerenciaRequest,
   CambiarEstadoRequest,
   CasoDetalle,
+  CasoEliminado,
   CasoResumen,
   CrearCasoRequest,
   CrearRespuestaRequest,
   EstadoCaso,
   PagedResult,
-  Respuesta
+  Respuesta,
+  RestaurarDemoResponse
 } from '../models/api.models';
 
 /**
@@ -54,9 +56,24 @@ export class CasosService {
     return this.http.put<CasoDetalle>(`${this.baseUrl}/${id}`, request);
   }
 
-  /** Elimina un caso de soporte (requiere rol Analista). */
+  /** Envía un caso de soporte a la papelera mediante borrado lógico (requiere rol Analista). */
   eliminarCaso(id: string): Observable<void> {
     return this.http.delete<void>(`${this.baseUrl}/${id}`);
+  }
+
+  /** Lista los casos almacenados en la papelera de reciclaje (exclusivo Analista). */
+  listarPapelera(): Observable<CasoEliminado[]> {
+    return this.http.get<CasoEliminado[]>(`${this.baseUrl}/papelera`);
+  }
+
+  /** Restaura un caso desde la papelera hacia la bandeja activa (exclusivo Analista). */
+  restaurarCaso(id: string): Observable<CasoDetalle> {
+    return this.http.post<CasoDetalle>(`${this.baseUrl}/${id}/restaurar`, {});
+  }
+
+  /** Recrea los casos de demostración faltantes sin duplicar los activos (exclusivo Analista). */
+  restaurarDatosDemo(): Observable<RestaurarDemoResponse> {
+    return this.http.post<RestaurarDemoResponse>(`${this.baseUrl}/restaurar-demo`, {});
   }
 
   /** Ejecuta una transición de estado controlada sobre el caso. */

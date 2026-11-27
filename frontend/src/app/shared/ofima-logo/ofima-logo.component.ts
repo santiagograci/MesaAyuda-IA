@@ -13,11 +13,11 @@ import { Component, Input } from '@angular/core';
         class="ofima-icon"
         [attr.width]="variant === 'full' ? 46 : 34"
         [attr.height]="variant === 'full' ? 46 : 34"
-        viewBox="0 0 64 64"
+        viewBox="0 0 68 64"
         fill="none"
         aria-hidden="true"
       >
-        <g transform="translate(5, 0) skewX(-8)">
+        <g transform="translate(8, 0) skewX(-8)">
           <rect x="10" y="6" width="18" height="14" rx="5" fill="#0095FF" />
           <rect x="6" y="24" width="24" height="16" rx="5" fill="#0095FF" />
           <rect x="10" y="44" width="18" height="14" rx="5" fill="#C5C9CE" />
@@ -49,10 +49,12 @@ import { Component, Input } from '@angular/core';
         display: inline-flex;
         align-items: center;
         gap: 0.75rem;
+        padding-left: 2px;
       }
       .ofima-icon {
         flex-shrink: 0;
         display: block;
+        overflow: visible;
       }
       .brand-copy {
         display: grid;

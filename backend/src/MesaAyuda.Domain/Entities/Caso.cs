@@ -28,6 +28,12 @@ public class Caso
     /// <summary>Fecha de creación del caso en formato UTC.</summary>
     public DateTime FechaCreacion { get; private set; }
 
+    /// <summary>Indica si el caso fue enviado a la papelera mediante borrado lógico.</summary>
+    public bool Eliminado { get; private set; }
+
+    /// <summary>Fecha UTC en que el caso fue marcado como eliminado, o nulo si está activo.</summary>
+    public DateTime? FechaEliminacion { get; private set; }
+
     /// <summary>Identificador del usuario cliente propietario del caso.</summary>
     public Guid ClienteId { get; private set; }
 
@@ -68,6 +74,8 @@ public class Caso
     /// </summary>
     public void CambiarEstado(EstadoCaso nuevoEstado)
     {
+        EnsureNotDeleted();
+
         if (Estado == nuevoEstado)
             return;
 
@@ -109,6 +117,8 @@ public class Caso
     /// </summary>
     public Respuesta AgregarRespuestaHumana(string texto, string autorNombre)
     {
+        EnsureNotDeleted();
+
         if (Estado == EstadoCaso.Cerrado)
             throw new DomainException("No se pueden agregar respuestas a un caso ya Cerrado.");
 
@@ -132,6 +142,8 @@ public class Caso
     /// </summary>
     public Respuesta AgregarSugerenciaIA(string texto, string fuentesJson)
     {
+        EnsureNotDeleted();
+
         if (Estado == EstadoCaso.Cerrado)
             throw new DomainException("No se pueden generar sugerencias de IA en un caso Cerrado.");
 
@@ -152,6 +164,8 @@ public class Caso
     /// </summary>
     public void Actualizar(string titulo, string descripcion, PrioridadCaso prioridad)
     {
+        EnsureNotDeleted();
+
         if (Estado == EstadoCaso.Cerrado)
             throw new DomainException("No se puede modificar un caso que ya se encuentra Cerrado.");
         if (string.IsNullOrWhiteSpace(titulo))
@@ -169,6 +183,8 @@ public class Caso
     /// </summary>
     public Respuesta AprobarSugerenciaIA(Guid respuestaId, string textoFinal, string nombreAnalista)
     {
+        EnsureNotDeleted();
+
         if (Estado == EstadoCaso.Cerrado)
             throw new DomainException("No se pueden aprobar respuestas en un caso Cerrado.");
 
@@ -184,5 +200,35 @@ public class Caso
             Estado = EstadoCaso.EnProceso;
 
         return respuesta;
+    }
+
+    /// <summary>
+    /// Marca el caso como eliminado (borrado lógico) registrando la fecha UTC de envío a papelera.
+    /// </summary>
+    public void MarcarComoEliminado()
+    {
+        if (Eliminado)
+            throw new DomainException("El caso ya se encuentra en la papelera de reciclaje.");
+
+        Eliminado = true;
+        FechaEliminacion = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Restaura el caso desde la papelera de reciclaje hacia la bandeja activa.
+    /// </summary>
+    public void Restaurar()
+    {
+        if (!Eliminado)
+            throw new DomainException("El caso no se encuentra en la papelera de reciclaje.");
+
+        Eliminado = false;
+        FechaEliminacion = null;
+    }
+
+    private void EnsureNotDeleted()
+    {
+        if (Eliminado)
+            throw new DomainException("No se puede modificar un caso que se encuentra en la papelera.");
     }
 }

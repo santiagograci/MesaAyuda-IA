@@ -86,6 +86,12 @@ public class AppDbContext : DbContext
             builder.Property(c => c.FechaCreacion)
                 .IsRequired();
 
+            builder.Property(c => c.Eliminado)
+                .IsRequired()
+                .HasDefaultValue(false);
+
+            builder.Property(c => c.FechaEliminacion);
+
             builder.HasOne(c => c.Cliente)
                 .WithMany()
                 .HasForeignKey(c => c.ClienteId)
@@ -101,6 +107,7 @@ public class AppDbContext : DbContext
 
             builder.HasIndex(c => c.Estado);
             builder.HasIndex(c => c.ClienteId);
+            builder.HasIndex(c => c.Eliminado);
         });
 
         modelBuilder.Entity<Respuesta>(builder =>

@@ -38,9 +38,25 @@ public interface ICasoService
         string rol,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Elimina un caso de soporte (operación restringida a rol Analista).</summary>
+    /// <summary>Envía un caso de soporte a la papelera mediante borrado lógico (rol Analista).</summary>
     Task EliminarCasoAsync(
         Guid id,
+        string rol,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Lista todos los casos que se encuentran en la papelera de reciclaje (exclusivo Analista).</summary>
+    Task<IReadOnlyList<CasoEliminadoDto>> ListarPapeleraAsync(
+        string rol,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Restaura un caso eliminado desde la papelera hacia la bandeja activa (exclusivo Analista).</summary>
+    Task<CasoDetalleDto> RestaurarCasoAsync(
+        Guid id,
+        string rol,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Recrea los casos de demostración ausentes sin duplicar los activos (exclusivo Analista).</summary>
+    Task<RestaurarDemoResponse> RestaurarDatosDemoAsync(
         string rol,
         CancellationToken cancellationToken = default);
 

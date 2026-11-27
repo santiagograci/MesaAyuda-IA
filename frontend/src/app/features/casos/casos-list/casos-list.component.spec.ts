@@ -74,4 +74,47 @@ describe('CasosListComponent', () => {
     firstCaseCard.click();
     expect(selectSpy).toHaveBeenCalledWith('caso-1');
   });
+
+  it('debe mostrar la pestaña de papelera para Analista y emitir restaurarCaso y restaurarDemo', () => {
+    const toggleSpy = spyOn(component.togglePapelera, 'emit');
+    const restoreSpy = spyOn(component.restaurarCaso, 'emit');
+    const demoSpy = spyOn(component.restaurarDemo, 'emit');
+
+    component.isAnalista = true;
+    component.papeleraCount = 1;
+    component.papeleraCasos = [
+      {
+        id: 'del-1',
+        titulo: 'Caso eliminado de prueba',
+        prioridad: 'Media',
+        estado: 'Abierto',
+        fechaCreacion: '2026-11-26T14:00:00Z',
+        fechaEliminacion: '2026-11-26T16:00:00Z',
+        clienteNombre: 'Carlos Mendoza'
+      }
+    ];
+    fixture.detectChanges();
+
+    const el: HTMLElement = fixture.nativeElement;
+    const trashTab = el.querySelector('.trash-tab') as HTMLButtonElement;
+    expect(trashTab.textContent).toContain('Papelera (1)');
+    trashTab.click();
+    expect(toggleSpy).toHaveBeenCalledWith(true);
+
+    component.papeleraMode = true;
+    fixture.detectChanges();
+
+    expect(el.textContent).toContain('Caso eliminado de prueba');
+    const restoreBtn = Array.from(el.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Restaurar caso')
+    ) as HTMLButtonElement;
+    restoreBtn.click();
+    expect(restoreSpy).toHaveBeenCalledWith('del-1');
+
+    const demoBtn = Array.from(el.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Restaurar Casos Demo')
+    ) as HTMLButtonElement;
+    demoBtn.click();
+    expect(demoSpy).toHaveBeenCalled();
+  });
 });

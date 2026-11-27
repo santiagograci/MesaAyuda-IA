@@ -240,6 +240,73 @@ public class CasosEndpointsTests : IClassFixture<CustomWebApplicationFactory>
         Assert.Contains("respuesta publicada", problem.Detail ?? string.Empty, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task SoftDelete_Papelera_RestaurarYRestaurarDemo_FuncionaConControlDeRoles()
+    {
+        using var client = _factory.CreateClient();
+
+        var loginCliente = await LoginAsync(client, "cliente@empresa.com", "Ofima2026*");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", loginCliente.Token);
+
+        var createRes = await client.PostAsJsonAsync(
+            "/api/casos",
+            new CrearCasoRequest(
+                $"Caso temporal papelera {Guid.NewGuid():N}",
+                "Prueba de integración para validar borrado lógico, papelera y restauración.",
+                "Media"));
+        Assert.Equal(HttpStatusCode.Created, createRes.StatusCode);
+        var caso = await createRes.Content.ReadFromJsonAsync<CasoDetalleDto>(JsonOptions);
+        Assert.NotNull(caso);
+
+        // Cliente no puede consultar papelera, restaurar ni restaurar demo
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/casos/papelera")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsync($"/api/casos/{caso!.Id}/restaurar", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsync("/api/casos/restaurar-demo", null)).StatusCode);
+
+        // Analista envía el caso a papelera (soft delete)
+        var loginAnalista = await LoginAsync(client, "analista@ofima.com", "Ofima2026*");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", loginAnalista.Token);
+
+        var deleteRes = await client.DeleteAsync($"/api/casos/{caso.Id}");
+        Assert.Equal(HttpStatusCode.NoContent, deleteRes.StatusCode);
+
+        var getDeletedRes = await client.GetAsync($"/api/casos/{caso.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, getDeletedRes.StatusCode);
+
+        var papeleraRes = await client.GetAsync("/api/casos/papelera");
+        Assert.Equal(HttpStatusCode.OK, papeleraRes.StatusCode);
+        var papelera = await papeleraRes.Content.ReadFromJsonAsync<List<CasoEliminadoDto>>(JsonOptions);
+        Assert.NotNull(papelera);
+        Assert.Contains(papelera!, c => c.Id == caso.Id);
+
+        // Analista restaura el caso desde la papelera
+        var restaurarRes = await client.PostAsync($"/api/casos/{caso.Id}/restaurar", null);
+        Assert.Equal(HttpStatusCode.OK, restaurarRes.StatusCode);
+        var restaurado = await restaurarRes.Content.ReadFromJsonAsync<CasoDetalleDto>(JsonOptions);
+        Assert.NotNull(restaurado);
+        Assert.Equal(caso.Id, restaurado!.Id);
+
+        var getRestauradoRes = await client.GetAsync($"/api/casos/{caso.Id}");
+        Assert.Equal(HttpStatusCode.OK, getRestauradoRes.StatusCode);
+
+        // Eliminar un caso demo y validar POST /api/casos/restaurar-demo sin duplicar existentes
+        var listRes = await client.GetAsync("/api/casos?page=1&pageSize=20");
+        var paged = await listRes.Content.ReadFromJsonAsync<PagedResult<CasoResumenDto>>(JsonOptions);
+        var demoFac = paged!.Items.First(c => c.Titulo.Contains("FAC-402", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/casos/{demoFac.Id}")).StatusCode);
+
+        var demoRestoreRes = await client.PostAsync("/api/casos/restaurar-demo", null);
+        Assert.Equal(HttpStatusCode.OK, demoRestoreRes.StatusCode);
+        var demoRestoreBody = await demoRestoreRes.Content.ReadFromJsonAsync<RestaurarDemoResponse>(JsonOptions);
+        Assert.NotNull(demoRestoreBody);
+        Assert.True(demoRestoreBody!.CasosCreados >= 1);
+
+        var demoRestoreIdempotent = await client.PostAsync("/api/casos/restaurar-demo", null);
+        Assert.Equal(HttpStatusCode.OK, demoRestoreIdempotent.StatusCode);
+        var idempotentBody = await demoRestoreIdempotent.Content.ReadFromJsonAsync<RestaurarDemoResponse>(JsonOptions);
+        Assert.Equal(0, idempotentBody!.CasosCreados);
+    }
+
     private static async Task<LoginResponse> LoginAsync(HttpClient client, string email, string password)
     {
         var response = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, password));

@@ -151,6 +151,56 @@ public class CasoDomainAndServiceTests
         Assert.Equal(1, unitOfWork.SaveChangesCount);
     }
 
+    [Fact]
+    public async Task EliminarYRestaurarCaso_ComoAnalista_AplicaSoftDeleteYPermiteRestauracion()
+    {
+        var caso = new Caso(
+            "Error FAC-402 al anular factura aceptada",
+            "El cliente solicita orientación para emitir nota crédito electrónica.",
+            PrioridadCaso.Alta,
+            Guid.NewGuid());
+        var repo = new FakeCasoRepository(new[] { caso });
+        var uow = new FakeUnitOfWork();
+        var service = BuildCasoService(repo, new FakeUsuarioRepository(), uow, new StubRagServiceClient());
+
+        await service.EliminarCasoAsync(caso.Id, "Analista");
+
+        Assert.True(caso.Eliminado);
+        Assert.NotNull(caso.FechaEliminacion);
+        Assert.Null(await repo.GetByIdAsync(caso.Id));
+
+        var papelera = await service.ListarPapeleraAsync("Analista");
+        Assert.Single(papelera, p => p.Id == caso.Id);
+
+        Assert.Throws<DomainException>(() => caso.CambiarEstado(EstadoCaso.EnProceso));
+
+        var restaurado = await service.RestaurarCasoAsync(caso.Id, "Analista");
+        Assert.Equal(caso.Id, restaurado.Id);
+        Assert.False(caso.Eliminado);
+        Assert.Null(caso.FechaEliminacion);
+        Assert.NotNull(await repo.GetByIdAsync(caso.Id));
+        Assert.Equal(2, uow.SaveChangesCount);
+    }
+
+    [Fact]
+    public async Task RestaurarDatosDemo_ComoAnalista_RecreaSoloFaltantesSinDuplicar()
+    {
+        var cliente1 = new Usuario("Carlos Mendoza", "cliente@empresa.com", "hash", RolUsuario.Cliente);
+        var cliente2 = new Usuario("Laura Gómez", "cliente2@empresa.com", "hash", RolUsuario.Cliente);
+        var analista = new Usuario("Santiago Graciano", "analista@ofima.com", "hash", RolUsuario.Analista);
+
+        var repo = new FakeCasoRepository();
+        var userRepo = new FakeUsuarioRepository(new[] { cliente1, cliente2, analista });
+        var uow = new FakeUnitOfWork();
+        var service = BuildCasoService(repo, userRepo, uow, new StubRagServiceClient());
+
+        var primera = await service.RestaurarDatosDemoAsync("Analista");
+        Assert.Equal(3, primera.CasosCreados);
+
+        var segunda = await service.RestaurarDatosDemoAsync("Analista");
+        Assert.Equal(0, segunda.CasosCreados);
+    }
+
     private static CasoService BuildCasoService(
         FakeCasoRepository casoRepo,
         FakeUsuarioRepository usuarioRepo,
@@ -178,7 +228,17 @@ public class CasoDomainAndServiceTests
         }
 
         public Task<Caso?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult(_casos.FirstOrDefault(c => c.Id == id && !c.Eliminado));
+
+        public Task<Caso?> GetByIdIncludingDeletedAsync(Guid id, CancellationToken cancellationToken = default) =>
             Task.FromResult(_casos.FirstOrDefault(c => c.Id == id));
+
+        public Task<IReadOnlyList<Caso>> ListarEliminadosAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<Caso>>(
+                _casos.Where(c => c.Eliminado).OrderByDescending(c => c.FechaEliminacion).ToList());
+
+        public Task<bool> ExistsActiveByTitleAsync(string titulo, CancellationToken cancellationToken = default) =>
+            Task.FromResult(_casos.Any(c => !c.Eliminado && string.Equals(c.Titulo, titulo.Trim(), StringComparison.OrdinalIgnoreCase)));
 
         public Task<(IReadOnlyList<Caso> Items, int TotalCount)> GetPagedAsync(
             Guid? clienteId,
@@ -189,7 +249,7 @@ public class CasoDomainAndServiceTests
             int pageSize,
             CancellationToken cancellationToken = default)
         {
-            IEnumerable<Caso> q = _casos;
+            IEnumerable<Caso> q = _casos.Where(c => !c.Eliminado);
             if (clienteId.HasValue) q = q.Where(c => c.ClienteId == clienteId.Value);
             if (estado.HasValue) q = q.Where(c => c.Estado == estado.Value);
             if (prioridad.HasValue) q = q.Where(c => c.Prioridad == prioridad.Value);
@@ -211,7 +271,12 @@ public class CasoDomainAndServiceTests
 
     private sealed class FakeUsuarioRepository : IUsuarioRepository
     {
-        private readonly List<Usuario> _usuarios = new();
+        private readonly List<Usuario> _usuarios;
+
+        public FakeUsuarioRepository(IEnumerable<Usuario>? initial = null)
+        {
+            _usuarios = initial?.ToList() ?? new List<Usuario>();
+        }
 
         public Task<Usuario?> GetByEmailAsync(string email, CancellationToken cancellationToken = default) =>
             Task.FromResult(_usuarios.FirstOrDefault(u => u.Email == email));

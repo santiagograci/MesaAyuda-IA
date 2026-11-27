@@ -152,3 +152,20 @@ export interface ProblemDetailsResponse {
   detail?: string;
   errors?: Record<string, string[]>;
 }
+
+/** Vista resumida de un caso almacenado en la papelera de reciclaje. */
+export interface CasoEliminado {
+  id: string;
+  titulo: string;
+  prioridad: PrioridadCaso;
+  estado: EstadoCaso;
+  fechaCreacion: string;
+  fechaEliminacion: string | null;
+  clienteNombre: string;
+}
+
+/** Respuesta devuelta al restaurar casos de demostración. */
+export interface RestaurarDemoResponse {
+  casosCreados: number;
+  mensaje: string;
+}

@@ -28,7 +28,42 @@ public class CasoRepository : ICasoRepository
         return await _dbContext.Casos
             .Include(c => c.Cliente)
             .Include(c => c.Respuestas.OrderBy(r => r.FechaCreacion))
+            .FirstOrDefaultAsync(c => c.Id == id && !c.Eliminado, cancellationToken);
+    }
+
+    /// <summary>
+    /// Recupera un caso por ID incluyendo casos en papelera para habilitar su restauración.
+    /// </summary>
+    public async Task<Caso?> GetByIdIncludingDeletedAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Casos
+            .Include(c => c.Cliente)
+            .Include(c => c.Respuestas.OrderBy(r => r.FechaCreacion))
             .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+    }
+
+    /// <summary>
+    /// Lista todos los casos marcados como eliminados ordenados por fecha de eliminación descendente.
+    /// </summary>
+    public async Task<IReadOnlyList<Caso>> ListarEliminadosAsync(CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Casos
+            .AsNoTracking()
+            .Include(c => c.Cliente)
+            .Where(c => c.Eliminado)
+            .OrderByDescending(c => c.FechaEliminacion ?? c.FechaCreacion)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Verifica si existe al menos un caso activo con el título indicado.
+    /// </summary>
+    public async Task<bool> ExistsActiveByTitleAsync(string titulo, CancellationToken cancellationToken = default)
+    {
+        var normalized = titulo.Trim().ToLowerInvariant();
+        return await _dbContext.Casos
+            .AsNoTracking()
+            .AnyAsync(c => !c.Eliminado && c.Titulo.ToLower() == normalized, cancellationToken);
     }
 
     /// <summary>
@@ -47,6 +82,7 @@ public class CasoRepository : ICasoRepository
             .AsNoTracking()
             .Include(c => c.Cliente)
             .Include(c => c.Respuestas)
+            .Where(c => !c.Eliminado)
             .AsQueryable();
 
         if (clienteId.HasValue)

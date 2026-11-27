@@ -1,9 +1,10 @@
 import { DatePipe } from '@angular/common';
 import { Component, EventEmitter, Input, Output } from '@angular/core';
-import { CasoResumen, EstadoCaso } from '../../../core/models/api.models';
+import { CasoEliminado, CasoResumen, EstadoCaso } from '../../../core/models/api.models';
 
 /**
- * Columna izquierda del Split-Screen: filtros por estado, listado paginado y controles de página.
+ * Columna izquierda del Split-Screen: filtros por estado, listado paginado,
+ * papelera de reciclaje y restauración de datos demo.
  */
 @Component({
   selector: 'app-casos-list',
@@ -12,30 +13,130 @@ import { CasoResumen, EstadoCaso } from '../../../core/models/api.models';
   template: `
     <aside class="list-panel card-surface">
       <div class="list-header">
-        <div>
-          <h2>Casos de Soporte</h2>
-          <span class="muted">{{ totalCount }} registros</span>
+        <div class="list-title-row">
+          <div>
+            <h2>{{ papeleraMode ? 'Papelera de Reciclaje' : 'Casos de Soporte' }}</h2>
+            <span class="muted">
+              {{ papeleraMode ? papeleraCasos.length + ' en papelera' : totalCount + ' registros' }}
+            </span>
+          </div>
+
+          @if (isAnalista) {
+            <div class="mode-tabs" role="tablist" aria-label="Modo de bandeja">
+              <button
+                type="button"
+                class="filter-pill"
+                [class.active]="!papeleraMode"
+                (click)="togglePapelera.emit(false)"
+              >
+                Bandeja
+              </button>
+              <button
+                type="button"
+                class="filter-pill trash-tab"
+                [class.active]="papeleraMode"
+                (click)="togglePapelera.emit(true)"
+              >
+                🗑️ Papelera ({{ papeleraCount }})
+              </button>
+            </div>
+          }
         </div>
       </div>
 
-      <div class="filter-bar" role="tablist" aria-label="Filtrar por estado">
-        @for (opt of filterOptions; track opt.value) {
-          <button
-            type="button"
-            class="filter-pill"
-            [class.active]="estadoFilter === opt.value"
-            (click)="estadoFilterChange.emit(opt.value)"
-          >
-            {{ opt.label }}
-          </button>
-        }
-      </div>
+      @if (!papeleraMode) {
+        <div class="filter-bar" role="tablist" aria-label="Filtrar por estado">
+          @for (opt of filterOptions; track opt.value) {
+            <button
+              type="button"
+              class="filter-pill"
+              [class.active]="estadoFilter === opt.value"
+              (click)="estadoFilterChange.emit(opt.value)"
+            >
+              {{ opt.label }}
+            </button>
+          }
+        </div>
+      }
 
       <div class="cases-scroll">
         @if (loading) {
           <div class="empty-box"><span class="spinner"></span> Cargando casos...</div>
+        } @else if (papeleraMode) {
+          @if (papeleraCasos.length === 0) {
+            <div class="empty-box">
+              <p>La papelera de reciclaje está vacía.</p>
+              @if (isAnalista) {
+                <button
+                  type="button"
+                  class="btn btn-soft btn-sm demo-btn"
+                  [disabled]="restoringDemo"
+                  (click)="restaurarDemo.emit()"
+                >
+                  @if (restoringDemo) {
+                    <span class="spinner"></span> Restaurando...
+                  } @else {
+                    🔄 Restaurar Casos Demo
+                  }
+                </button>
+              }
+            </div>
+          } @else {
+            @for (item of papeleraCasos; track item.id) {
+              <div class="case-item trash-item">
+                <div class="case-top">
+                  <span class="badge" [class]="'badge badge-estado-' + item.estado">
+                    {{ formatEstado(item.estado) }}
+                  </span>
+                  <span class="badge" [class]="'badge badge-prioridad-' + item.prioridad">
+                    {{ item.prioridad }}
+                  </span>
+                </div>
+
+                <div class="case-title">{{ item.titulo }}</div>
+
+                <div class="case-meta">
+                  <span>{{ item.clienteNombre }}</span>
+                  @if (item.fechaEliminacion) {
+                    <span>Eliminado {{ item.fechaEliminacion | date: 'dd/MM HH:mm' }}</span>
+                  }
+                </div>
+
+                <div class="trash-actions">
+                  <button
+                    type="button"
+                    class="btn btn-soft btn-sm"
+                    [disabled]="restoringId === item.id"
+                    (click)="restaurarCaso.emit(item.id)"
+                  >
+                    @if (restoringId === item.id) {
+                      <span class="spinner"></span> Restaurando...
+                    } @else {
+                      ♻️ Restaurar caso
+                    }
+                  </button>
+                </div>
+              </div>
+            }
+          }
         } @else if (casos.length === 0) {
-          <div class="empty-box">No hay casos registrados con el filtro actual.</div>
+          <div class="empty-box">
+            <p>No hay casos registrados con el filtro actual.</p>
+            @if (isAnalista && estadoFilter === '') {
+              <button
+                type="button"
+                class="btn btn-soft btn-sm demo-btn"
+                [disabled]="restoringDemo"
+                (click)="restaurarDemo.emit()"
+              >
+                @if (restoringDemo) {
+                  <span class="spinner"></span> Restaurando...
+                } @else {
+                  🔄 Restaurar Casos Demo
+                }
+              </button>
+            }
+          </div>
         } @else {
           @for (caso of casos; track caso.id) {
             <button
@@ -71,25 +172,42 @@ import { CasoResumen, EstadoCaso } from '../../../core/models/api.models';
         }
       </div>
 
-      <div class="pagination-bar">
-        <button
-          type="button"
-          class="btn btn-sm"
-          [disabled]="page <= 1 || loading"
-          (click)="pageChange.emit(page - 1)"
-        >
-          ← Anterior
-        </button>
-        <span class="muted">Página {{ page }} de {{ totalPages || 1 }}</span>
-        <button
-          type="button"
-          class="btn btn-sm"
-          [disabled]="page >= totalPages || loading"
-          (click)="pageChange.emit(page + 1)"
-        >
-          Siguiente →
-        </button>
-      </div>
+      @if (!papeleraMode) {
+        <div class="pagination-bar">
+          <button
+            type="button"
+            class="btn btn-sm"
+            [disabled]="page <= 1 || loading"
+            (click)="pageChange.emit(page - 1)"
+          >
+            ← Anterior
+          </button>
+          <span class="muted">Página {{ page }} de {{ totalPages || 1 }}</span>
+          <button
+            type="button"
+            class="btn btn-sm"
+            [disabled]="page >= totalPages || loading"
+            (click)="pageChange.emit(page + 1)"
+          >
+            Siguiente →
+          </button>
+        </div>
+      } @else if (isAnalista && papeleraCasos.length > 0) {
+        <div class="pagination-bar">
+          <button
+            type="button"
+            class="btn btn-soft btn-sm demo-btn-full"
+            [disabled]="restoringDemo"
+            (click)="restaurarDemo.emit()"
+          >
+            @if (restoringDemo) {
+              <span class="spinner"></span> Restaurando...
+            } @else {
+              🔄 Restaurar Casos Demo
+            }
+          </button>
+        </div>
+      }
     </aside>
   `,
   styles: [
@@ -102,12 +220,41 @@ import { CasoResumen, EstadoCaso } from '../../../core/models/api.models';
         overflow: hidden;
       }
       .list-header {
-        padding: 1rem 1rem 0.65rem;
+        padding: 0.9rem 1rem 0.7rem;
         border-bottom: 1px solid var(--border-color);
         h2 {
           margin: 0;
           font-size: 1.05rem;
         }
+      }
+      .list-title-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      .mode-tabs {
+        display: flex;
+        gap: 0.35rem;
+        align-items: center;
+      }
+      .trash-item {
+        cursor: default;
+      }
+      .trash-item:hover {
+        background: var(--bg-surface);
+      }
+      .trash-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 0.15rem;
+      }
+      .demo-btn {
+        margin-top: 0.75rem;
+      }
+      .demo-btn-full {
+        width: 100%;
       }
       .muted {
         color: var(--text-secondary);
@@ -205,10 +352,19 @@ export class CasosListComponent {
   @Input() totalPages = 1;
   @Input() totalCount = 0;
   @Input() loading = false;
+  @Input() isAnalista = false;
+  @Input() papeleraMode = false;
+  @Input() papeleraCasos: CasoEliminado[] = [];
+  @Input() papeleraCount = 0;
+  @Input() restoringId: string | null = null;
+  @Input() restoringDemo = false;
 
   @Output() selectCaso = new EventEmitter<string>();
   @Output() estadoFilterChange = new EventEmitter<EstadoCaso | ''>();
   @Output() pageChange = new EventEmitter<number>();
+  @Output() togglePapelera = new EventEmitter<boolean>();
+  @Output() restaurarCaso = new EventEmitter<string>();
+  @Output() restaurarDemo = new EventEmitter<void>();
 
   readonly filterOptions: readonly { label: string; value: EstadoCaso | '' }[] = [
     { label: 'Todos', value: '' },

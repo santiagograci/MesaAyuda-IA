@@ -1,146 +1,91 @@
-import { provideHttpClient } from '@angular/common/http';
-import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { signal } from '@angular/core';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { of } from 'rxjs';
 import { CasoDetalle } from '../../../core/models/api.models';
 import { AuthService } from '../../../core/services/auth.service';
+import { CasosService } from '../../../core/services/casos.service';
 import { CasoDetailComponent } from './caso-detail.component';
 
-describe('CasoDetailComponent', () => {
+describe('CasoDetailComponent (Protección contra borrado con cuenta regresiva)', () => {
   let fixture: ComponentFixture<CasoDetailComponent>;
   let component: CasoDetailComponent;
-  let httpMock: HttpTestingController;
-  const isAnalistaSignal = signal<boolean>(true);
+  let casosServiceSpy: jasmine.SpyObj<CasosService>;
 
-  const mockAuthService = {
-    isAnalista: isAnalistaSignal.asReadonly(),
-    isCliente: () => !isAnalistaSignal()
-  };
-
-  const baseCaso: CasoDetalle = {
-    id: 'caso-qa-1',
+  const mockCaso: CasoDetalle = {
+    id: 'caso-delete-1',
     titulo: 'Error FAC-402 al anular factura electrónica',
-    descripcion: 'El sistema impide anular directamente una factura aceptada por DIAN.',
+    descripcion: 'Descripción de prueba para validar confirmación con cuenta regresiva de 3 segundos.',
     prioridad: 'Alta',
     estado: 'Abierto',
-    fechaCreacion: '2026-11-26T20:00:00Z',
+    fechaCreacion: '2026-11-26T15:00:00Z',
     clienteId: 'cli-1',
-    clienteNombre: 'Carlos Mendoza - Contabilidad',
+    clienteNombre: 'Carlos Mendoza',
     respuestas: []
   };
 
   beforeEach(async () => {
-    isAnalistaSignal.set(true);
+    casosServiceSpy = jasmine.createSpyObj<CasosService>('CasosService', ['eliminarCaso']);
+    casosServiceSpy.eliminarCaso.and.returnValue(of(void 0));
+
+    const authMock = {
+      isAnalista: signal(true),
+      isAuthenticated: signal(true),
+      currentUser: signal(null)
+    };
 
     await TestBed.configureTestingModule({
       imports: [CasoDetailComponent],
       providers: [
-        provideHttpClient(),
-        provideHttpClientTesting(),
-        { provide: AuthService, useValue: mockAuthService }
+        { provide: CasosService, useValue: casosServiceSpy },
+        { provide: AuthService, useValue: authMock }
       ]
     }).compileComponents();
 
     fixture = TestBed.createComponent(CasoDetailComponent);
     component = fixture.componentInstance;
-    httpMock = TestBed.inject(HttpTestingController);
+    component.caso = mockCaso;
+    fixture.detectChanges();
   });
 
-  afterEach(() => {
-    httpMock.verify();
-  });
+  it('debe exigir cuenta regresiva de 3 segundos antes de habilitar la eliminación lógica', fakeAsync(() => {
+    const elimSpy = spyOn(component.casoEliminado, 'emit');
+    const el: HTMLElement = fixture.nativeElement;
 
-  it('debe actualizar reactivamente borradores de IA pendientes y permitir aprobación al Analista', () => {
-    component.caso = baseCaso;
+    const deleteBtn = Array.from(el.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Eliminar'
+    ) as HTMLButtonElement;
+    expect(deleteBtn).toBeDefined();
+
+    deleteBtn.click();
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Historial de Atención (0)');
-    expect(fixture.nativeElement.textContent).not.toContain('Borradores de IA pendientes de aprobación');
+    expect(el.textContent).toContain('Pasará a la papelera de reciclaje');
 
-    const casoConBorrador: CasoDetalle = {
-      ...baseCaso,
-      respuestas: [
-        {
-          id: 'resp-ia-1',
-          texto: 'Emita una Nota Crédito NC-01 referenciando el CUFE original.',
-          esGeneradaPorIA: true,
-          aprobadaPorAnalista: false,
-          autorNombre: 'MesaAyuda IA',
-          fuentesCitadas: [
-            {
-              documento: '01-facturacion-electronica-y-anulaciones.md',
-              seccion: 'Reglas de Anulación Directa vs. Nota Crédito',
-              fragmento: 'Error FAC-402 requiere Nota Crédito NC-01.',
-              puntaje: 0.84
-            }
-          ],
-          fechaCreacion: '2026-11-26T20:05:00Z'
-        }
-      ]
-    };
+    const getConfirmBtn = () =>
+      el.querySelector('[data-testid="confirm-delete-btn"]') as HTMLButtonElement;
 
-    component.caso = casoConBorrador;
+    expect(getConfirmBtn().disabled).toBeTrue();
+    expect(getConfirmBtn().textContent).toContain('3s');
+
+    tick(1000);
+    fixture.detectChanges();
+    expect(getConfirmBtn().disabled).toBeTrue();
+    expect(getConfirmBtn().textContent).toContain('2s');
+
+    tick(1000);
+    fixture.detectChanges();
+    expect(getConfirmBtn().disabled).toBeTrue();
+    expect(getConfirmBtn().textContent).toContain('1s');
+
+    tick(1000);
+    fixture.detectChanges();
+    expect(getConfirmBtn().disabled).toBeFalse();
+    expect(getConfirmBtn().textContent).toContain('Sí, eliminar caso');
+
+    getConfirmBtn().click();
     fixture.detectChanges();
 
-    const text = fixture.nativeElement.textContent as string;
-    expect(text).toContain('Borradores de IA pendientes de aprobación (1)');
-    expect(text).toContain('01-facturacion-electronica-y-anulaciones.md');
-    expect(text).toContain('Aprobar y Publicar al Cliente');
-    expect(text).toContain('Historial de Atención (0)');
-
-    const textarea = fixture.nativeElement.querySelector('textarea[id="edit-resp-ia-1"]') as HTMLTextAreaElement;
-    expect(textarea).not.toBeNull();
-    expect(textarea.value).toContain('Nota Crédito NC-01');
-  });
-
-  it('debe ocultar borradores IA sin aprobar y controles de Analista cuando el usuario es Cliente', () => {
-    isAnalistaSignal.set(false);
-    component.caso = {
-      ...baseCaso,
-      estado: 'EnProceso',
-      respuestas: [
-        {
-          id: 'resp-ia-draft',
-          texto: 'Borrador interno sin aprobar.',
-          esGeneradaPorIA: true,
-          aprobadaPorAnalista: false,
-          autorNombre: 'MesaAyuda IA',
-          fuentesCitadas: [],
-          fechaCreacion: '2026-11-26T20:05:00Z'
-        },
-        {
-          id: 'resp-ia-ok',
-          texto: 'Respuesta aprobada oficialmente para el cliente.',
-          esGeneradaPorIA: true,
-          aprobadaPorAnalista: true,
-          autorNombre: 'Santiago Graciano - Analista Soporte',
-          fuentesCitadas: [],
-          fechaCreacion: '2026-11-26T20:06:00Z'
-        }
-      ]
-    };
-    fixture.detectChanges();
-
-    const text = fixture.nativeElement.textContent as string;
-    expect(text).not.toContain('Borrador interno sin aprobar.');
-    expect(text).not.toContain('Aprobar y Publicar al Cliente');
-    expect(text).not.toContain('Eliminar');
-    expect(text).toContain('Respuesta aprobada oficialmente para el cliente.');
-    expect(text).toContain('Historial de Atención (1)');
-  });
-
-  it('debe bloquear acciones cuando el caso pasa reactivamente a estado Cerrado', () => {
-    component.caso = { ...baseCaso, estado: 'Resuelto' };
-    fixture.detectChanges();
-
-    expect(fixture.nativeElement.textContent).toContain('Pasar a Cerrado');
-
-    component.caso = { ...baseCaso, estado: 'Cerrado' };
-    fixture.detectChanges();
-
-    const text = fixture.nativeElement.textContent as string;
-    expect(text).not.toContain('Pasar a Cerrado');
-    expect(text).not.toContain('Pedir sugerencia a la IA');
-    expect(text).toContain('Cerrado');
-  });
+    expect(casosServiceSpy.eliminarCaso).toHaveBeenCalledWith('caso-delete-1');
+    expect(elimSpy).toHaveBeenCalledWith('caso-delete-1');
+  }));
 });

@@ -171,8 +171,88 @@ public class CasoService : ICasoService
             throw new UnauthorizedAccessException("Solo un Analista puede eliminar casos.");
 
         var caso = await GetCasoOrThrowAsync(id, cancellationToken);
-        _casoRepository.Remove(caso);
+        caso.MarcarComoEliminado();
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<CasoEliminadoDto>> ListarPapeleraAsync(
+        string rol,
+        CancellationToken cancellationToken = default)
+    {
+        if (!string.Equals(rol, nameof(RolUsuario.Analista), StringComparison.OrdinalIgnoreCase))
+            throw new UnauthorizedAccessException("Solo un Analista puede consultar la papelera de reciclaje.");
+
+        var eliminados = await _casoRepository.ListarEliminadosAsync(cancellationToken);
+        return eliminados
+            .Select(c => new CasoEliminadoDto(
+                Id: c.Id,
+                Titulo: c.Titulo,
+                Prioridad: c.Prioridad.ToString(),
+                Estado: c.Estado.ToString(),
+                FechaCreacion: c.FechaCreacion,
+                FechaEliminacion: c.FechaEliminacion,
+                ClienteNombre: c.Cliente?.Nombre ?? "Cliente ERP"))
+            .ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<CasoDetalleDto> RestaurarCasoAsync(
+        Guid id,
+        string rol,
+        CancellationToken cancellationToken = default)
+    {
+        if (!string.Equals(rol, nameof(RolUsuario.Analista), StringComparison.OrdinalIgnoreCase))
+            throw new UnauthorizedAccessException("Solo un Analista puede restaurar casos desde la papelera.");
+
+        var caso = await _casoRepository.GetByIdIncludingDeletedAsync(id, cancellationToken)
+            ?? throw new KeyNotFoundException($"No se encontró el caso con identificador '{id}'.");
+
+        caso.Restaurar();
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return MapToDetalleDto(caso);
+    }
+
+    /// <inheritdoc />
+    public async Task<RestaurarDemoResponse> RestaurarDatosDemoAsync(
+        string rol,
+        CancellationToken cancellationToken = default)
+    {
+        if (!string.Equals(rol, nameof(RolUsuario.Analista), StringComparison.OrdinalIgnoreCase))
+            throw new UnauthorizedAccessException("Solo un Analista puede restaurar los casos de demostración.");
+
+        var usuarios = await _usuarioRepository.GetAllAsync(cancellationToken);
+        var cliente1 = usuarios.FirstOrDefault(u => string.Equals(u.Email, "cliente@empresa.com", StringComparison.OrdinalIgnoreCase))
+            ?? usuarios.FirstOrDefault(u => u.Rol == RolUsuario.Cliente)
+            ?? throw new KeyNotFoundException("No existen usuarios con rol Cliente para asociar los casos demo.");
+        var cliente2 = usuarios.FirstOrDefault(u => string.Equals(u.Email, "cliente2@empresa.com", StringComparison.OrdinalIgnoreCase))
+            ?? cliente1;
+        var analista = usuarios.FirstOrDefault(u => string.Equals(u.Email, "analista@ofima.com", StringComparison.OrdinalIgnoreCase))
+            ?? usuarios.FirstOrDefault(u => u.Rol == RolUsuario.Analista);
+
+        var plantillaDemo = DemoCasosCatalog.CreateDemoCases(
+            cliente1.Id,
+            cliente2.Id,
+            analista?.Nombre ?? "Analista Soporte Ofima");
+
+        var creados = 0;
+        foreach (var demo in plantillaDemo)
+        {
+            if (await _casoRepository.ExistsActiveByTitleAsync(demo.Titulo, cancellationToken))
+                continue;
+
+            await _casoRepository.AddAsync(demo, cancellationToken);
+            creados++;
+        }
+
+        if (creados > 0)
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        var mensaje = creados > 0
+            ? $"Se restauraron {creados} caso(s) de demostración en la bandeja activa."
+            : "Los 3 casos de demostración ya se encuentran activos en la bandeja.";
+
+        return new RestaurarDemoResponse(creados, mensaje);
     }
 
     /// <inheritdoc />

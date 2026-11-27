@@ -72,3 +72,20 @@ public record CrearRespuestaRequest(string Texto);
 /// Solicitud del analista para aprobar y/o editar una sugerencia generada por IA.
 /// </summary>
 public record AprobarSugerenciaRequest(string TextoFinal);
+
+/// <summary>
+/// Vista resumida de un caso almacenado en la papelera de reciclaje.
+/// </summary>
+public record CasoEliminadoDto(
+    Guid Id,
+    string Titulo,
+    string Prioridad,
+    string Estado,
+    DateTime FechaCreacion,
+    DateTime? FechaEliminacion,
+    string ClienteNombre);
+
+/// <summary>
+/// Resultado de restaurar los casos de demostración predeterminados en la base de datos.
+/// </summary>
+public record RestaurarDemoResponse(int CasosCreados, string Mensaje);
