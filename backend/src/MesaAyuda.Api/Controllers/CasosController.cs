@@ -153,7 +153,7 @@ public class CasosController : ControllerBase
     /// Consulta al microservicio RAG y registra un borrador de respuesta sugerido por IA con citas.
     /// </summary>
     [HttpPost("{id:guid}/sugerencia")]
-    [ProducesResponseType(typeof(RespuestaDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(RespuestaDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -163,7 +163,7 @@ public class CasosController : ControllerBase
     {
         var (usuarioId, rol, _) = GetCurrentUser();
         var sugerencia = await _casoService.GenerarSugerenciaIAAsync(id, usuarioId, rol, cancellationToken);
-        return StatusCode(StatusCodes.Status201Created, sugerencia);
+        return Ok(sugerencia);
     }
 
     /// <summary>
