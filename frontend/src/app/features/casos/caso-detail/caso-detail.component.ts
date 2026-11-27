@@ -1,0 +1,562 @@
+import { DatePipe, DecimalPipe } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
+import {
+  Component,
+  EventEmitter,
+  Input,
+  OnChanges,
+  Output,
+  computed,
+  inject,
+  signal
+} from '@angular/core';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import {
+  CasoDetalle,
+  EstadoCaso,
+  ProblemDetailsResponse,
+  Respuesta
+} from '../../../core/models/api.models';
+import { AuthService } from '../../../core/services/auth.service';
+import { CasosService } from '../../../core/services/casos.service';
+
+/**
+ * Vista de detalle del caso con máquina de estados, historial de respuestas,
+ * consulta al motor RAG, citas documentales y aprobación exclusiva del Analista.
+ */
+@Component({
+  selector: 'app-caso-detail',
+  standalone: true,
+  imports: [ReactiveFormsModule, DatePipe, DecimalPipe],
+  template: `
+    <section class="detail-card card-surface">
+      <header class="detail-header">
+        <div class="title-block">
+          <div class="badges-row">
+            <span class="badge" [class]="'badge badge-estado-' + caso.estado">
+              {{ formatEstado(caso.estado) }}
+            </span>
+            <span class="badge" [class]="'badge badge-prioridad-' + caso.prioridad">
+              Prioridad {{ caso.prioridad }}
+            </span>
+            <span class="meta-text">
+              {{ caso.clienteNombre }} · {{ caso.fechaCreacion | date: 'dd/MM/yyyy HH:mm' }}
+            </span>
+          </div>
+          <h2>{{ caso.titulo }}</h2>
+        </div>
+
+        <div class="header-actions">
+          @if (caso.estado !== 'Cerrado') {
+            <button
+              type="button"
+              class="btn btn-soft btn-sm"
+              [disabled]="generatingIa()"
+              (click)="pedirSugerencia()"
+            >
+              @if (generatingIa()) {
+                <span class="spinner"></span> Consultando RAG...
+              } @else {
+                ✨ Pedir sugerencia a la IA
+              }
+            </button>
+          }
+
+          @if (authService.isAnalista()) {
+            <button
+              type="button"
+              class="btn btn-danger btn-sm"
+              [disabled]="busy()"
+              (click)="eliminar()"
+            >
+              Eliminar
+            </button>
+          }
+        </div>
+      </header>
+
+      <div class="description-box">
+        <p>{{ caso.descripcion }}</p>
+      </div>
+
+      @if (errorMsg()) {
+        <div class="alert-error" role="alert">{{ errorMsg() }}</div>
+      }
+      @if (infoMsg()) {
+        <div class="alert-info" role="status">{{ infoMsg() }}</div>
+      }
+
+      @if (allowedNextStates().length > 0) {
+        <div class="workflow-bar">
+          <span class="workflow-label">Flujo de estado:</span>
+          @for (nextState of allowedNextStates(); track nextState) {
+            <button
+              type="button"
+              class="btn btn-sm"
+              [class.btn-primary]="nextState === 'Cerrado' || nextState === 'Resuelto'"
+              [disabled]="busy()"
+              (click)="cambiarEstado(nextState)"
+            >
+              Pasar a {{ formatEstado(nextState) }}
+            </button>
+          }
+        </div>
+      }
+
+      <section class="history-section">
+        <h3>Historial de Atención ({{ visibleRespuestas().length }})</h3>
+
+        @if (visibleRespuestas().length === 0) {
+          <div class="empty-history">
+            Aún no hay respuestas publicadas. Puedes responder directamente o solicitar una sugerencia al motor RAG.
+          </div>
+        }
+
+        <div class="responses-list">
+          @for (resp of visibleRespuestas(); track resp.id) {
+            <article [class]="resp.esGeneradaPorIA ? 'ia-card' : 'human-card'">
+              <div class="resp-header">
+                <div class="resp-author">
+                  <strong>{{ resp.autorNombre }}</strong>
+                  @if (resp.esGeneradaPorIA) {
+                    <span class="badge badge-ia">
+                      {{ resp.aprobadaPorAnalista ? '✨ IA Aprobada' : '✨ Borrador IA (Pendiente revisión)' }}
+                    </span>
+                  }
+                </div>
+                <span class="meta-text">{{ resp.fechaCreacion | date: 'dd/MM/yyyy HH:mm' }}</span>
+              </div>
+
+              @if (resp.esGeneradaPorIA && !resp.aprobadaPorAnalista && authService.isAnalista()) {
+                <div class="approval-box">
+                  <label class="edit-label" [for]="'edit-' + resp.id">
+                    Revisar y editar antes de publicar al cliente:
+                  </label>
+                  <textarea
+                    [id]="'edit-' + resp.id"
+                    rows="5"
+                    class="form-control"
+                    [value]="getDraftText(resp)"
+                    (input)="onDraftInput(resp.id, $event)"
+                  ></textarea>
+                  <div class="approval-actions">
+                    <button
+                      type="button"
+                      class="btn btn-primary btn-sm"
+                      [disabled]="busy() || caso.estado === 'Cerrado'"
+                      (click)="aprobarSugerencia(resp)"
+                    >
+                      Aprobar y Publicar al Cliente
+                    </button>
+                  </div>
+                </div>
+              } @else {
+                <p class="resp-body">{{ resp.texto }}</p>
+              }
+
+              @if (resp.fuentesCitadas.length > 0) {
+                <div class="citations-box">
+                  <div class="citations-title">Fuentes citadas del manual Ofima ERP:</div>
+                  <div class="citations-grid">
+                    @for (fuente of resp.fuentesCitadas; track $index) {
+                      <div class="citation-item">
+                        <div class="citation-head">
+                          <strong>{{ fuente.documento }}</strong>
+                          <span class="score-pill">{{ fuente.puntaje * 100 | number: '1.0-1' }}%</span>
+                        </div>
+                        <div class="citation-sec">{{ fuente.seccion }}</div>
+                        <div class="citation-frag">{{ fuente.fragmento }}</div>
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+            </article>
+          }
+        </div>
+      </section>
+
+      @if (caso.estado !== 'Cerrado') {
+        <form [formGroup]="replyForm" (ngSubmit)="enviarRespuesta()" class="reply-form">
+          <label for="replyText">Agregar respuesta humana</label>
+          <textarea
+            id="replyText"
+            rows="3"
+            class="form-control"
+            formControlName="texto"
+            placeholder="Escribe una respuesta o aclaración sobre el caso..."
+          ></textarea>
+          @if (replyForm.controls.texto.touched && replyForm.controls.texto.invalid) {
+            <small class="field-error">La respuesta debe tener entre 5 y 4000 caracteres.</small>
+          }
+          <div class="reply-actions">
+            <button type="submit" class="btn btn-primary" [disabled]="busy()">
+              Enviar Respuesta
+            </button>
+          </div>
+        </form>
+      }
+    </section>
+  `,
+  styles: [
+    `
+      .detail-card {
+        padding: 1.5rem;
+        display: grid;
+        gap: 1.15rem;
+        align-content: start;
+      }
+      .detail-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 1rem;
+      }
+      .title-block {
+        display: grid;
+        gap: 0.45rem;
+        h2 {
+          margin: 0;
+          font-size: 1.25rem;
+        }
+      }
+      .badges-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .meta-text {
+        font-size: 0.78rem;
+        color: var(--text-secondary);
+      }
+      .header-actions {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+      .description-box {
+        padding: 0.9rem 1rem;
+        border-radius: calc(var(--radius-card) * 0.8);
+        background: var(--bg-surface-alt);
+        border: 1px solid var(--border-color);
+        p {
+          margin: 0;
+          white-space: pre-wrap;
+        }
+      }
+      .workflow-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1rem;
+        border-radius: calc(var(--radius-card) * 0.8);
+        border: 1px dashed var(--border-color);
+      }
+      .workflow-label {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: var(--text-secondary);
+        margin-right: 0.25rem;
+      }
+      .history-section {
+        display: grid;
+        gap: 0.8rem;
+        h3 {
+          margin: 0;
+          font-size: 1rem;
+        }
+      }
+      .empty-history {
+        padding: 1rem;
+        border: 1px dashed var(--border-color);
+        border-radius: calc(var(--radius-card) * 0.8);
+        color: var(--text-secondary);
+        font-size: 0.86rem;
+      }
+      .responses-list {
+        display: grid;
+        gap: 0.85rem;
+      }
+      .human-card {
+        padding: 1rem;
+        border-radius: var(--radius-card);
+        border: 1px solid var(--border-color);
+        background: var(--bg-surface-alt);
+      }
+      .resp-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.55rem;
+      }
+      .resp-author {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+      .resp-body {
+        margin: 0;
+        white-space: pre-wrap;
+        font-size: 0.92rem;
+      }
+      .approval-box {
+        display: grid;
+        gap: 0.55rem;
+      }
+      .edit-label {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--accent-primary);
+      }
+      .approval-actions,
+      .reply-actions {
+        display: flex;
+        justify-content: flex-end;
+      }
+      .citations-box {
+        margin-top: 0.85rem;
+        padding-top: 0.75rem;
+        border-top: 1px solid var(--border-color);
+      }
+      .citations-title {
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: var(--text-secondary);
+        margin-bottom: 0.5rem;
+      }
+      .citations-grid {
+        display: grid;
+        gap: 0.5rem;
+      }
+      .citation-item {
+        padding: 0.6rem 0.75rem;
+        border-radius: calc(var(--radius-card) * 0.7);
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        font-size: 0.8rem;
+      }
+      .citation-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.5rem;
+      }
+      .score-pill {
+        font-weight: 700;
+        color: var(--accent-primary);
+      }
+      .citation-sec {
+        color: var(--accent-primary);
+        font-weight: 600;
+        margin: 0.15rem 0;
+      }
+      .citation-frag {
+        color: var(--text-secondary);
+      }
+      .reply-form {
+        display: grid;
+        gap: 0.5rem;
+        padding-top: 0.75rem;
+        border-top: 1px solid var(--border-color);
+        label {
+          font-size: 0.85rem;
+          font-weight: 600;
+        }
+      }
+      .field-error {
+        color: var(--danger-text);
+        font-size: 0.78rem;
+      }
+    `
+  ]
+})
+export class CasoDetailComponent implements OnChanges {
+  private readonly fb = inject(FormBuilder);
+  private readonly casosService = inject(CasosService);
+  readonly authService = inject(AuthService);
+
+  @Input({ required: true }) caso!: CasoDetalle;
+  @Output() casoActualizado = new EventEmitter<CasoDetalle>();
+  @Output() casoEliminado = new EventEmitter<string>();
+
+  readonly busy = signal<boolean>(false);
+  readonly generatingIa = signal<boolean>(false);
+  readonly errorMsg = signal<string>('');
+  readonly infoMsg = signal<string>('');
+  readonly draftEdits = signal<Record<string, string>>({});
+
+  readonly allowedNextStates = computed<EstadoCaso[]>(() => {
+    switch (this.caso.estado) {
+      case 'Abierto':
+        return ['EnProceso'];
+      case 'EnProceso':
+        return ['Resuelto'];
+      case 'Resuelto':
+        return ['EnProceso', 'Cerrado'];
+      default:
+        return [];
+    }
+  });
+
+  readonly visibleRespuestas = computed<Respuesta[]>(() => {
+    if (this.authService.isAnalista()) {
+      return this.caso.respuestas;
+    }
+    return this.caso.respuestas.filter((r) => !r.esGeneradaPorIA || r.aprobadaPorAnalista);
+  });
+
+  readonly replyForm = this.fb.nonNullable.group({
+    texto: ['', [Validators.required, Validators.minLength(5), Validators.maxLength(4000)]]
+  });
+
+  ngOnChanges(): void {
+    this.errorMsg.set('');
+    this.infoMsg.set('');
+  }
+
+  formatEstado(estado: EstadoCaso): string {
+    return estado === 'EnProceso' ? 'En Proceso' : estado;
+  }
+
+  getDraftText(resp: Respuesta): string {
+    return this.draftEdits()[resp.id] ?? resp.texto;
+  }
+
+  onDraftInput(respId: string, event: Event): void {
+    const value = (event.target as HTMLTextAreaElement).value;
+    this.draftEdits.update((prev) => ({ ...prev, [respId]: value }));
+  }
+
+  pedirSugerencia(): void {
+    this.generatingIa.set(true);
+    this.errorMsg.set('');
+    this.infoMsg.set('');
+
+    this.casosService.pedirSugerenciaIA(this.caso.id).subscribe({
+      next: () => {
+        this.generatingIa.set(false);
+        this.infoMsg.set(
+          this.authService.isAnalista()
+            ? 'Sugerencia IA generada. Revísala y publícala cuando esté lista.'
+            : 'Sugerencia IA generada y enviada a revisión del Analista.'
+        );
+        this.reloadCaso();
+      },
+      error: (err: unknown) => {
+        this.generatingIa.set(false);
+        this.errorMsg.set(this.extractErrorMessage(err));
+      }
+    });
+  }
+
+  aprobarSugerencia(resp: Respuesta): void {
+    const textoFinal = this.getDraftText(resp).trim();
+    if (textoFinal.length < 5) {
+      this.errorMsg.set('El texto aprobado debe tener al menos 5 caracteres.');
+      return;
+    }
+
+    this.busy.set(true);
+    this.errorMsg.set('');
+    this.infoMsg.set('');
+
+    this.casosService.aprobarSugerenciaIA(this.caso.id, resp.id, textoFinal).subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.infoMsg.set('Respuesta IA aprobada y publicada al cliente.');
+        this.reloadCaso();
+      },
+      error: (err: unknown) => {
+        this.busy.set(false);
+        this.errorMsg.set(this.extractErrorMessage(err));
+      }
+    });
+  }
+
+  cambiarEstado(nuevoEstado: EstadoCaso): void {
+    this.busy.set(true);
+    this.errorMsg.set('');
+    this.infoMsg.set('');
+
+    this.casosService.cambiarEstado(this.caso.id, nuevoEstado).subscribe({
+      next: (actualizado) => {
+        this.busy.set(false);
+        this.caso = actualizado;
+        this.casoActualizado.emit(actualizado);
+      },
+      error: (err: unknown) => {
+        this.busy.set(false);
+        this.errorMsg.set(this.extractErrorMessage(err));
+      }
+    });
+  }
+
+  enviarRespuesta(): void {
+    if (this.replyForm.invalid) {
+      this.replyForm.markAllAsTouched();
+      return;
+    }
+
+    this.busy.set(true);
+    this.errorMsg.set('');
+    this.infoMsg.set('');
+
+    this.casosService.agregarRespuesta(this.caso.id, this.replyForm.getRawValue().texto).subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.replyForm.reset();
+        this.reloadCaso();
+      },
+      error: (err: unknown) => {
+        this.busy.set(false);
+        this.errorMsg.set(this.extractErrorMessage(err));
+      }
+    });
+  }
+
+  eliminar(): void {
+    this.busy.set(true);
+    this.errorMsg.set('');
+
+    this.casosService.eliminarCaso(this.caso.id).subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.casoEliminado.emit(this.caso.id);
+      },
+      error: (err: unknown) => {
+        this.busy.set(false);
+        this.errorMsg.set(this.extractErrorMessage(err));
+      }
+    });
+  }
+
+  private reloadCaso(): void {
+    this.casosService.obtenerCaso(this.caso.id).subscribe({
+      next: (actualizado) => {
+        this.caso = actualizado;
+        this.casoActualizado.emit(actualizado);
+      },
+      error: (err: unknown) => {
+        this.errorMsg.set(this.extractErrorMessage(err));
+      }
+    });
+  }
+
+  private extractErrorMessage(err: unknown): string {
+    if (err instanceof HttpErrorResponse && err.error) {
+      const problem = err.error as ProblemDetailsResponse;
+      if (problem.errors) {
+        const firstKey = Object.keys(problem.errors)[0];
+        if (firstKey && problem.errors[firstKey]?.length) {
+          return problem.errors[firstKey][0];
+        }
+      }
+      return problem.detail || problem.title || 'No se pudo completar la operación.';
+    }
+    return 'Error de comunicación con el servidor.';
+  }
+}

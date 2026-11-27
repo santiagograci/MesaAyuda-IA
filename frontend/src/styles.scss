@@ -1,0 +1,292 @@
+/* ==========================================================================
+   Sistema de Diseño MesaAyuda IA (Claro/Oscuro + Máscaras Predefinidas/Custom)
+   ========================================================================== */
+
+:root,
+[data-mode='light'] {
+  --bg-app: #f4f6fa;
+  --bg-surface: #ffffff;
+  --bg-surface-alt: #f8fafc;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --border-color: #dbe2ea;
+  --accent-primary: #0052cc;
+  --accent-hover: #003e9e;
+  --accent-soft: rgba(0, 82, 204, 0.1);
+  --radius-card: 10px;
+  --shadow-card: 0 2px 10px rgba(15, 23, 42, 0.06);
+  --danger-bg: #fef2f2;
+  --danger-text: #b91c1c;
+  --danger-border: #fecaca;
+  --success-bg: #ecfdf5;
+  --success-text: #047857;
+  --warn-bg: #fffbeb;
+  --warn-text: #b45309;
+}
+
+[data-mode='dark'] {
+  --bg-app: #0b1120;
+  --bg-surface: #111827;
+  --bg-surface-alt: #1e293b;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --border-color: #293548;
+  --accent-primary: #3b82f6;
+  --accent-hover: #2563eb;
+  --accent-soft: rgba(59, 130, 246, 0.16);
+  --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --danger-bg: rgba(185, 28, 28, 0.18);
+  --danger-text: #fca5a5;
+  --danger-border: rgba(248, 113, 113, 0.35);
+  --success-bg: rgba(5, 150, 105, 0.18);
+  --success-text: #6ee7b7;
+  --warn-bg: rgba(217, 119, 6, 0.18);
+  --warn-text: #fcd34d;
+}
+
+[data-mask='ofima-blue'][data-mode='light'] {
+  --accent-primary: #0052cc;
+  --accent-hover: #003e9e;
+  --accent-soft: rgba(0, 82, 204, 0.1);
+}
+
+[data-mask='emerald-erp'] {
+  --accent-primary: #059669;
+  --accent-hover: #047857;
+  --accent-soft: rgba(5, 150, 105, 0.14);
+}
+
+[data-mask='indigo-ai'] {
+  --accent-primary: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-soft: rgba(79, 70, 229, 0.14);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  line-height: 1.5;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+/* Botones reutilizables */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.55rem 1rem;
+  border-radius: calc(var(--radius-card) * 0.75);
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover:not(:disabled) {
+    background: var(--bg-surface-alt);
+  }
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+}
+
+.btn-primary {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: #ffffff;
+
+  &:hover:not(:disabled) {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+}
+
+.btn-soft {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent-primary);
+
+  &:hover:not(:disabled) {
+    filter: brightness(0.95);
+  }
+}
+
+.btn-danger {
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: var(--danger-text);
+}
+
+.btn-sm {
+  padding: 0.38rem 0.75rem;
+  font-size: 0.8rem;
+}
+
+/* Badges de Estado y Prioridad */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.badge-estado-Abierto {
+  background: rgba(59, 130, 246, 0.15);
+  color: #2563eb;
+}
+
+.badge-estado-EnProceso {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
+.badge-estado-Resuelto {
+  background: var(--success-bg);
+  color: var(--success-text);
+}
+
+.badge-estado-Cerrado {
+  background: var(--bg-surface-alt);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.badge-prioridad-Baja {
+  background: var(--bg-surface-alt);
+  color: var(--text-secondary);
+}
+
+.badge-prioridad-Media {
+  background: rgba(14, 165, 233, 0.15);
+  color: #0284c7;
+}
+
+.badge-prioridad-Alta {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
+.badge-prioridad-Critica {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.badge-ia {
+  background: var(--accent-soft);
+  color: var(--accent-primary);
+}
+
+/* Formularios y alertas */
+.form-control {
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  border-radius: calc(var(--radius-card) * 0.7);
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  transition: border-color 0.15s ease;
+
+  &:focus {
+    border-color: var(--accent-primary);
+    outline: none;
+  }
+}
+
+.alert-error {
+  padding: 0.75rem 1rem;
+  border-radius: calc(var(--radius-card) * 0.75);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  color: var(--danger-text);
+  font-size: 0.875rem;
+}
+
+.alert-info {
+  padding: 0.75rem 1rem;
+  border-radius: calc(var(--radius-card) * 0.75);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-primary);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
+.card-surface {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+/* Tarjeta destacada para sugerencias de IA */
+.ia-card {
+  background: linear-gradient(135deg, var(--accent-soft), var(--bg-surface-alt));
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-card);
+  padding: 1rem;
+}
+
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Split-Screen Layout responsivo */
+.split-workspace {
+  display: grid;
+  grid-template-columns: minmax(310px, 380px) 1fr;
+  gap: 1.25rem;
+  padding: 1.25rem;
+  max-width: 1480px;
+  margin: 0 auto;
+  min-height: calc(100vh - 68px);
+}
+
+@media (max-width: 960px) {
+  .split-workspace {
+    grid-template-columns: 1fr;
+  }
+}
