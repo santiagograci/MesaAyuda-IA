@@ -2,11 +2,13 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using MesaAyuda.Api.Middleware;
 using MesaAyuda.Application.Common;
 using MesaAyuda.Application.DTOs;
 using MesaAyuda.Application.Interfaces;
 using MesaAyuda.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -644,6 +646,95 @@ public class CasosEndpointsTests : IClassFixture<CustomWebApplicationFactory>
         Assert.Equal("EnProceso", reabierto!.Estado);
         Assert.Contains(reabierto.Respuestas, r =>
             r.Texto.Contains("🔄 [Caso Reabierto: El error volvió a reproducirse", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CorrelationId_GeneraYRespetaHeaderYPropagaEnDelegatingHandler()
+    {
+        using var client = _factory.CreateClient();
+
+        // 1. Sin header entrante -> la API genera X-Correlation-ID UUID
+        var resSinHeader = await client.GetAsync("/api/auth/demo-users");
+        Assert.Equal(HttpStatusCode.OK, resSinHeader.StatusCode);
+        Assert.True(resSinHeader.Headers.TryGetValues(CorrelationIdMiddleware.HeaderName, out var generatedValues));
+        var generatedId = Assert.Single(generatedValues);
+        Assert.True(Guid.TryParse(generatedId, out _));
+
+        // 2. Con header entrante -> la API preserva el mismo X-Correlation-ID en la respuesta
+        using var requestConHeader = new HttpRequestMessage(HttpMethod.Get, "/api/auth/demo-users");
+        requestConHeader.Headers.Add(CorrelationIdMiddleware.HeaderName, "trace-ofima-2026-001");
+        var resConHeader = await client.SendAsync(requestConHeader);
+        Assert.Equal(HttpStatusCode.OK, resConHeader.StatusCode);
+        Assert.True(resConHeader.Headers.TryGetValues(CorrelationIdMiddleware.HeaderName, out var echoedValues));
+        Assert.Equal("trace-ofima-2026-001", Assert.Single(echoedValues));
+
+        // 3. DelegatingHandler propaga el Correlation ID hacia peticiones salientes al servicio RAG
+        var httpContext = new DefaultHttpContext();
+        httpContext.Items[CorrelationIdMiddleware.HeaderName] = "trace-rag-999";
+        var accessor = new HttpContextAccessor { HttpContext = httpContext };
+        var captureHandler = new CaptureCorrelationHandler();
+        var delegatingHandler = new CorrelationIdDelegatingHandler(accessor)
+        {
+            InnerHandler = captureHandler
+        };
+
+        using var outgoingClient = new HttpClient(delegatingHandler);
+        var outgoingRes = await outgoingClient.PostAsJsonAsync(
+            "http://rag-service:8000/preguntar",
+            new { pregunta = "FAC-402", top_k = 4 });
+        Assert.Equal(HttpStatusCode.OK, outgoingRes.StatusCode);
+        Assert.Equal("trace-rag-999", captureHandler.CapturedCorrelationId);
+    }
+
+    [Fact]
+    public async Task RateLimiting_EnEndpointsIA_Retorna429ProblemDetailsAlSuperar20SolicitudesPorMinuto()
+    {
+        using var client = _factory.CreateClient();
+
+        // Usuario dedicado sin llamadas previas a endpoints IA en la partición de ventana fija
+        var loginCliente2 = await LoginAsync(client, "cliente2@empresa.com", "Ofima2026*");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", loginCliente2.Token);
+
+        var deflexionPayload = new DeflexionRequest(
+            "Error FAC-402 factura",
+            "Consulta repetida para validar umbral FinOps de 20 solicitudes por minuto.");
+
+        for (var i = 0; i < 20; i++)
+        {
+            var okRes = await client.PostAsJsonAsync("/api/casos/deflexion", deflexionPayload);
+            Assert.Equal(HttpStatusCode.OK, okRes.StatusCode);
+        }
+
+        using var rateLimitedReq = new HttpRequestMessage(HttpMethod.Post, "/api/casos/deflexion")
+        {
+            Content = JsonContent.Create(deflexionPayload)
+        };
+        rateLimitedReq.Headers.Add(CorrelationIdMiddleware.HeaderName, "trace-ratelimit-429");
+
+        var tooManyRes = await client.SendAsync(rateLimitedReq);
+        Assert.Equal(HttpStatusCode.TooManyRequests, tooManyRes.StatusCode);
+        Assert.True(tooManyRes.Headers.TryGetValues(CorrelationIdMiddleware.HeaderName, out var cidValues));
+        Assert.Equal("trace-ratelimit-429", Assert.Single(cidValues));
+
+        var problem = await tooManyRes.Content.ReadFromJsonAsync<ProblemDetails>(JsonOptions);
+        Assert.NotNull(problem);
+        Assert.Equal(429, problem!.Status);
+        Assert.Contains("20", problem.Detail ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    private sealed class CaptureCorrelationHandler : HttpMessageHandler
+    {
+        public string? CapturedCorrelationId { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            if (request.Headers.TryGetValues(CorrelationIdMiddleware.HeaderName, out var values))
+                CapturedCorrelationId = values.FirstOrDefault();
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        }
     }
 
     private static async Task<LoginResponse> LoginAsync(HttpClient client, string email, string password)

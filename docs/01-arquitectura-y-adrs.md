@@ -24,39 +24,45 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    Browser["Navegador Web"] -->|"HTTP :4200"| FE["Frontend Container\nAngular 18 + Nginx SPA & Proxy /api (SSE sin buffering, 10m)"]
-    FE -->|"HTTP :8080 (interno) / :5080 (host)"| API["Backend Container\n.NET 8 Clean Architecture API + Polly (15s + 2 retries + CB)"]
+    Browser["Navegador Web"] -->|"HTTP :4200 + X-Correlation-ID"| FE["Frontend Container\nAngular 18 + Nginx SPA & Proxy /api (SSE sin buffering, 10m)"]
+    FE -->|"HTTP :8080 (interno) / :5080 (host)"| API["Backend Container\n.NET 8 API + CorrelationId + RateLimit 20/min IA + Polly"]
     API -->|"TCP :5432 (EF Core + Npgsql)"| PG[("PostgreSQL 16 Alpine\nVolumen pgdata")]
-    API -->|"HTTP :8000 (/preguntar, /documentos, /ingesta/archivo)"| RAG["RAG Service Container\nPython 3.11 FastAPI + ChromaDB + BM25"]
+    API -->|"HTTP :8000 + X-Correlation-ID"| RAG["RAG Service Container\nPython 3.11 FastAPI + ChromaDB + BM25"]
     RAG -->|"Lectura / Escritura"| CorpusVol[("Corpus ERP\n./corpus")]
 ```
 
-#### Arquitectura Objetivo en Microsoft Azure (Producción)
+#### Arquitectura Objetivo en Microsoft Azure (Producción Zero-Trust)
 
 ```mermaid
 flowchart TB
-    Users["Usuarios Corporativos / Entra ID SSO"] --> AFD["Azure Front Door + WAF"]
-    AFD --> SWA["Azure Static Web Apps\n(Angular 18 CDN)"]
-    AFD --> ACA_API["Azure Container Apps / AKS\n(.NET 8 API — Autoescalado)"]
-    ACA_API --> AZ_PG[("Azure Database for PostgreSQL\nFlexible Server HA")]
-    ACA_API --> ACA_RAG["Azure Container Apps\n(Python FastAPI RAG)"]
-    ACA_RAG --> AZ_VEC[("Azure AI Search / Chroma Persistente")]
-    ACA_RAG -.-> AZ_LLM["Azure OpenAI / Ollama Self-Hosted"]
-    ACA_API -.-> KV["Azure Key Vault\n(JWT y API Keys)"]
-    ACA_API -.-> AI["Application Insights + OpenTelemetry"]
+    Users["Usuarios / Entra ID OIDC+PKCE"] --> AFD["Azure Front Door + WAF"]
+    AFD --> SWA["Azure Static Web Apps (Angular 18)"]
+    AFD --> ACA_API["Azure Container Apps (.NET 8 API + RateLimit)"]
+    ACA_API --> AZ_PG[("Azure PostgreSQL Flexible + RLS Multi-Tenant")]
+    ACA_API --> SAS["Azure Blob Storage + SAS Tokens (Adjuntos)"]
+    ACA_API --> SB["Azure Service Bus + Blob Ingesta Asíncrona"]
+    SB --> ACA_RAG["Azure Container Apps (FastAPI RAG / Agente MCP)"]
+    ACA_API -->|"X-Correlation-ID + Polly"| ACA_RAG
+    ACA_RAG --> AZ_VEC[("Azure AI Search Multi-Tenant")]
+    ACA_RAG --> DLP["Azure AI Content Safety (DLP / PII)"]
+    DLP --> AZ_LLM["Azure OpenAI / Function Calling ERP"]
+    ACA_API -.-> KV["Azure Key Vault"]
+    ACA_API -.-> AI["App Insights + OpenTelemetry"]
     ACA_RAG -.-> AI
 ```
+
+**Evolución a producción Azure:** ingesta documental desacoplada vía **Blob Storage + Service Bus**, adjuntos en Blob con **SAS Tokens** efímeros, aislamiento **PostgreSQL RLS + Azure AI Search**, identidad Zero-Trust con **Entra ID + Key Vault + Content Safety (DLP)**, trazabilidad `X-Correlation-ID` y evolución de RAG consultivo a **Agente ERP con Function Calling / MCP**.
 
 ---
 
 ## 2. Architecture Decision Records (ADRs)
 
-### ADR-001: Clean Architecture en .NET 8 + Polly (`Microsoft.Extensions.Http.Resilience`)
+### ADR-001: Clean Architecture en .NET 8 + Polly, Correlación y Rate Limiting FinOps
 
-- **Contexto:** El núcleo transaccional exige autenticación JWT por roles, aislamiento por cliente, máquina de estados (`Abierto -> EnProceso -> Resuelto -> Cerrado`), reglas SLA/CSAT/papelera y comunicación HTTP con IA sujeta a latencia variable.
-- **Decisión:** Estructurar la solución en 4 capas (`Domain`, `Application`, `Infrastructure`, `Api`) con entidades ricas (`Caso`, `Respuesta`), patrones `Repository`, `Unit of Work`, `Dependency Injection`, `Options`, `ProblemDetails` RFC 7807 y resiliencia Polly v8 (`15s` timeout, `2` reintentos exponenciales con jitter y Circuit Breaker).
-- **Alternativas descartadas:** *N-capas tradicional* (tiende a modelos anémicos y lógica en controladores) y *Vertical Slice con MediatR* (sobrecoste innecesario para el alcance actual).
-- **Consecuencias:** (+) Invariantes verificables en pruebas unitarias sin BD y degradación controlada si cae el RAG. (-) Mayor número de proyectos y mapeos DTO explícitos.
+- **Contexto:** El núcleo transaccional exige RBAC JWT, aislamiento por cliente, máquina de estados, SLA/CSAT, trazabilidad distribuida hacia Python y protección ante abuso o picos de costo IA.
+- **Decisión:** Estructurar la solución en 4 capas (`Domain`, `Application`, `Infrastructure`, `Api`) con `CorrelationIdMiddleware` + `CorrelationIdDelegatingHandler` (`X-Correlation-ID` + `ILogger.BeginScope`), **Rate Limiting** nativo (`"AiEndpointsPolicy"`, `20 req/min` con `429 ProblemDetails` sobre endpoints RAG), `ProblemDetails` RFC 7807 y Polly v8 (`15s`, `2` reintentos con jitter y Circuit Breaker).
+- **Alternativas descartadas:** *N-capas tradicional* (modelos anémicos) y *gateways externos pesados* en MVP local.
+- **Consecuencias:** (+) Trazabilidad punta a punta Angular ➔ .NET ➔ FastAPI y contención inmediata de consumo FinOps sin paquetes externos. (-) Requiere calibrar partición de ventana fija al escalar múltiples réplicas (migrar a Redis Rate Limiting en Azure).
 
 ### ADR-002: ChromaDB + Búsqueda Híbrida (`0.70` Vectorial + `0.30` BM25) y Chunking por Secciones (`650 / 120`)
 

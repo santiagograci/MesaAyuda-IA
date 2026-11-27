@@ -36,11 +36,13 @@ public static class DependencyInjection
     }
 
     /// <summary>
-    /// Registra DbContext PostgreSQL, repositorios, UnitOfWork y servicios criptográficos JWT.
+    /// Registra DbContext PostgreSQL, repositorios, UnitOfWork, servicios criptográficos JWT
+    /// y el cliente HTTP resiliente del servicio RAG con extensibilidad opcional de handlers.
     /// </summary>
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        Action<IHttpClientBuilder>? configureRagHttpClient = null)
     {
         var connectionString = ResolveConnectionString(configuration);
         var jwtSettings = JwtSettings.FromConfiguration(configuration);
@@ -57,11 +59,14 @@ public static class DependencyInjection
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         var ragBaseUrl = (configuration["RAG_SERVICE_URL"] ?? "http://rag-service:8000").TrimEnd('/');
-        services.AddHttpClient<IRagServiceClient, RagServiceClient>(client =>
+        var ragClientBuilder = services.AddHttpClient<IRagServiceClient, RagServiceClient>(client =>
         {
             client.BaseAddress = new Uri(ragBaseUrl);
-        })
-        .AddStandardResilienceHandler(options =>
+        });
+
+        configureRagHttpClient?.Invoke(ragClientBuilder);
+
+        ragClientBuilder.AddStandardResilienceHandler(options =>
         {
             options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(15);
             options.Retry.MaxRetryAttempts = 2;

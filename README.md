@@ -8,9 +8,9 @@
 
 | Componente | Tecnología | Puerto (Host -> Contenedor) | Responsabilidad Principal |
 | :--- | :--- | :---: | :--- |
-| **Frontend Web** | Angular 18+ (Standalone + Signals + Nginx) | `4200:80` | Portal Split-Screen Claro/Oscuro + máscaras, SLA visual, deflexión RAG, CSAT, streaming SSE y proxy `/api/` |
-| **Backend Core** | .NET 8 Clean Architecture + EF Core + Polly | `5080:8080` | API RESTful JWT (`Cliente` / `Analista`), máquina de estados, SLA, CSAT, SSE, métricas FinOps y gateway RAG |
-| **Servicio RAG** | Python 3.11 FastAPI + ChromaDB + BM25 | `8000:8000` | Ingesta de `.md`/`.txt`/`.pdf`, búsqueda híbrida, mitigación *prompt injection* y proveedores Strategy LLM |
+| **Frontend Web** | Angular 18+ (Standalone + Signals + Nginx) | `4200:80` | Portal Split-Screen Claro/Oscuro + máscaras, `X-Correlation-ID`, SLA visual, deflexión RAG, CSAT, streaming SSE y proxy `/api/` |
+| **Backend Core** | .NET 8 Clean Architecture + EF Core + Polly | `5080:8080` | API RESTful JWT (`Cliente` / `Analista`), correlación `X-Correlation-ID`, Rate Limiting IA (`20/min`), SLA, CSAT, SSE y FinOps |
+| **Servicio RAG** | Python 3.11 FastAPI + ChromaDB + BM25 | `8000:8000` | Ingesta de `.md`/`.txt`/`.pdf`, búsqueda híbrida, logs estructurados por `X-Correlation-ID`, anti-*prompt injection* y Strategy LLM |
 | **Base de Datos** | PostgreSQL 16 Alpine | `5432:5432` | Persistencia relacional con volumen `pgdata` y migraciones automáticas de EF Core |
 
 ### Patrones de Diseño y Arquitectura Implementados
@@ -82,8 +82,8 @@ Adicionalmente, el motor RAG soporta ingesta dinámica de archivos **`.md`, `.tx
   - **Encuesta CSAT (`POST /api/casos/{id}/csat`):** calificación de 1 a 5 estrellas y comentario opcional del cliente dueño al resolver/cerrar.
   - **Escalamiento de Prioridad Auditado (`PATCH /api/casos/{id}/prioridad`):** justificación obligatoria (>= 10 caracteres) registrada en historial.
   - **Protección contra Borrado y Papelera de Reciclaje:** soft delete (`Eliminado`/`FechaEliminacion`), confirmación con cuenta regresiva de 3s, restauración individual y restauración de casos demo.
-  - **Seguridad y Productividad UI:** cierre automático por inactividad tras 10 minutos con aviso en el último minuto (`localStorage` multi-pestaña), búsqueda instantánea (`300 ms`) + filtro por prioridad y gestor en vivo de manuales RAG.
-- **Recorte Consciente de Alcance:** se excluyeron deliberadamente la omnicanalidad IMAP/WhatsApp y el SSO con Entra ID para mantener portabilidad autocontenida con `docker compose up --build`, y se documentó la evolución futura hacia un **Agente ERP con Function Calling** (ver detalle en [02-plan-estandares-riesgos-bitacora.md](docs/02-plan-estandares-riesgos-bitacora.md)).
+  - **Seguridad, Observabilidad y Productividad UI:** correlación distribuida `X-Correlation-ID` de punta a punta (Angular ➔ .NET 8 `CorrelationIdMiddleware` + `CorrelationIdDelegatingHandler` ➔ FastAPI), **Rate Limiting FinOps** nativo en .NET 8 (`"AiEndpointsPolicy"`, `20 req/min` con `429 ProblemDetails` en endpoints IA), cierre por inactividad (10m), búsqueda instantánea (`300 ms`) y gestor en vivo de manuales RAG.
+- **Arquitectura Target en Azure y Recorte Consciente:** se excluyeron omnicanalidad IMAP/WhatsApp y SSO Entra ID del runtime local para garantizar portabilidad autocontenida con `docker compose up --build`; el plano objetivo Azure contempla **Blob Storage + Service Bus** (ingesta asíncrona), **SAS Tokens** (adjuntos), **PostgreSQL RLS + Azure AI Search** (multi-tenant), **Entra ID + Key Vault + Azure AI Content Safety (DLP)** y **Agente ERP con Function Calling / MCP** (ver [01-arquitectura-y-adrs.md](docs/01-arquitectura-y-adrs.md) y [02-plan-estandares-riesgos-bitacora.md](docs/02-plan-estandares-riesgos-bitacora.md)).
 
 ---
 
@@ -93,8 +93,8 @@ La evaluación automatizada sobre el corpus de 6 manuales (`86` fragmentos) y 10
 
 | Suite / Pipeline | Comando | Resultado Verificado | Cobertura Principal |
 | :--- | :--- | :---: | :--- |
-| **Python RAG** | `pytest -v` | **7 passed** | Chunking + metadatos, citación `FAC-402`, anclaje negativo, *prompt injection* HTTP `400`, LRU cache, `/documentos` e ingesta `.txt` |
-| **.NET 8 Backend** | `dotnet test backend/MesaAyuda.sln` | **25 passed** | **15** unitarias (dominio, SLA, prioridad, CSAT, reapertura, deflexión, imágenes, soft-delete) + **10** integración `WebApplicationFactory` |
+| **Python RAG** | `pytest -v` | **8 passed** | Chunking + metadatos, citación `FAC-402`, anclaje negativo, *prompt injection* HTTP `400`, LRU cache, `/documentos`, ingesta `.txt` y `X-Correlation-ID` |
+| **.NET 8 Backend** | `dotnet test backend/MesaAyuda.sln` | **27 passed** | **15** unitarias (dominio, SLA, prioridad, CSAT, reapertura, deflexión, imágenes, soft-delete) + **12** integración (`X-Correlation-ID`, Rate Limiting `429` y flujos E2E) |
 | **Angular 18 Frontend** | `npm test` (Karma/ChromeHeadless) | **22 passed** | `AuthService`, `IdleTimeoutService`, `SafeMarkdownPipe`, `CasosListComponent`, `CasoCreateComponent`, `CasoDetailComponent` y `KnowledgeBaseModalComponent` |
 | **Evaluación RAG** | `python -m evaluation.evaluate` | **100% (10/10)** | Hit Rate @ 4 (`100%`), Faithfulness (`100%`), Out-of-Domain Rejection (`100%`), latencia media `13.75 ms` |
 

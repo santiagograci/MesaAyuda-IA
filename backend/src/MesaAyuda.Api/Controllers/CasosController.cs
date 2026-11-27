@@ -5,6 +5,7 @@ using MesaAyuda.Application.Interfaces;
 using MesaAyuda.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace MesaAyuda.Api.Controllers;
 
@@ -250,10 +251,12 @@ public class CasosController : ControllerBase
     /// Consulta al microservicio RAG y registra un borrador de respuesta sugerido por IA con citas.
     /// </summary>
     [HttpPost("{id:guid}/sugerencia")]
+    [EnableRateLimiting("AiEndpointsPolicy")]
     [ProducesResponseType(typeof(RespuestaDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult<RespuestaDto>> GenerarSugerenciaIA(
         Guid id,
         CancellationToken cancellationToken = default)
@@ -268,6 +271,7 @@ public class CasosController : ControllerBase
     /// </summary>
     [HttpPost("{id:guid}/sugerencia/stream")]
     [Authorize(Roles = "Analista")]
+    [EnableRateLimiting("AiEndpointsPolicy")]
     public async Task GenerarSugerenciaIaStream(
         Guid id,
         CancellationToken cancellationToken = default)
@@ -358,7 +362,9 @@ public class CasosController : ControllerBase
     /// Consulta al motor RAG para sugerir guías oficiales antes de registrar un caso (deflexión preventiva).
     /// </summary>
     [HttpPost("deflexion")]
+    [EnableRateLimiting("AiEndpointsPolicy")]
     [ProducesResponseType(typeof(DeflexionResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult<DeflexionResponse>> DeflexionPreventiva(
         [FromBody] DeflexionRequest request,
         CancellationToken cancellationToken = default)

@@ -3,6 +3,7 @@ using MesaAyuda.Application.Interfaces;
 using MesaAyuda.Domain.Exceptions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Polly.CircuitBreaker;
 using Polly.Timeout;
 
@@ -62,9 +63,11 @@ public class DocumentosController : ControllerBase
     /// Valida e ingesta un nuevo manual (.md, .txt o .pdf, máx. 5 MB) hacia el servicio RAG.
     /// </summary>
     [HttpPost("ingestar")]
+    [EnableRateLimiting("AiEndpointsPolicy")]
     [ProducesResponseType(typeof(IngestaArchivoResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     public async Task<ActionResult<IngestaArchivoResponse>> Ingestar(
         IFormFile? archivo,

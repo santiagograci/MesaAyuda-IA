@@ -170,7 +170,11 @@ export class CasosService {
       const token = this.authService.getToken();
 
       const headers: Record<string, string> = {
-        Accept: 'text/event-stream'
+        Accept: 'text/event-stream',
+        'X-Correlation-ID':
+          typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : `sse-${Date.now()}`
       };
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
