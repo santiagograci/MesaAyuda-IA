@@ -110,8 +110,21 @@ public interface ICasoService
         string rol,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Calcula métricas operativas y consumo FinOps de IA para el usuario o de forma global.</summary>
+    /// <summary>Calcula métricas operativas, CSAT y consumo FinOps de IA para el usuario o globalmente.</summary>
     Task<MetricasMesaAyudaDto> ObtenerMetricasAsync(
+        Guid usuarioId,
+        string rol,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Consulta sugerencias preventivas del motor RAG sin persistir un caso todavía.</summary>
+    Task<DeflexionResponse> ConsultarDeflexionAsync(
+        DeflexionRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Registra la encuesta de satisfacción CSAT del cliente dueño en un caso resuelto o cerrado.</summary>
+    Task<CasoDetalleDto> RegistrarCsatAsync(
+        Guid id,
+        RegistrarCsatRequest request,
         Guid usuarioId,
         string rol,
         CancellationToken cancellationToken = default);

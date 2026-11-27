@@ -31,6 +31,12 @@ public class Caso
     /// <summary>Fecha UTC de la última actualización operativa del caso.</summary>
     public DateTime? FechaActualizacion { get; private set; }
 
+    /// <summary>Calificación de satisfacción CSAT (1 a 5) otorgada por el cliente al resolver/cerrar.</summary>
+    public int? CalificacionCsat { get; private set; }
+
+    /// <summary>Comentario opcional registrado por el cliente junto con la encuesta CSAT.</summary>
+    public string? ComentarioCsat { get; private set; }
+
     /// <summary>Indica si el caso fue enviado a la papelera mediante borrado lógico.</summary>
     public bool Eliminado { get; private set; }
 
@@ -278,6 +284,69 @@ public class Caso
 
         _respuestas.Add(evento);
         return evento;
+    }
+
+    /// <summary>
+    /// Retorna la ventana objetivo de resolución (SLA) según la prioridad del caso.
+    /// </summary>
+    public static TimeSpan ObtenerVentanaSla(PrioridadCaso prioridad) => prioridad switch
+    {
+        PrioridadCaso.Critica => TimeSpan.FromHours(2),
+        PrioridadCaso.Alta => TimeSpan.FromHours(8),
+        PrioridadCaso.Media => TimeSpan.FromHours(24),
+        PrioridadCaso.Baja => TimeSpan.FromHours(72),
+        _ => TimeSpan.FromHours(24)
+    };
+
+    /// <summary>
+    /// Calcula la fecha límite UTC de cumplimiento SLA a partir de la creación y prioridad.
+    /// </summary>
+    public DateTime CalcularFechaLimiteSla() => FechaCreacion.Add(ObtenerVentanaSla(Prioridad));
+
+    /// <summary>
+    /// Evalúa el estado actual del SLA (<c>Cumplido</c>, <c>EnTiempo</c>, <c>PorVencer</c> o <c>Vencido</c>).
+    /// </summary>
+    public string EvaluarEstadoSla(DateTime? ahoraUtc = null)
+    {
+        if (Estado is EstadoCaso.Resuelto or EstadoCaso.Cerrado)
+            return "Cumplido";
+
+        var ahora = ahoraUtc ?? DateTime.UtcNow;
+        var ventana = ObtenerVentanaSla(Prioridad);
+        var limite = FechaCreacion.Add(ventana);
+
+        if (ahora >= limite)
+            return "Vencido";
+
+        var restante = limite - ahora;
+        return restante.TotalSeconds <= ventana.TotalSeconds * 0.25
+            ? "PorVencer"
+            : "EnTiempo";
+    }
+
+    /// <summary>
+    /// Registra la calificación CSAT (1 a 5) y comentario opcional de un caso resuelto o cerrado.
+    /// </summary>
+    public void RegistrarCsat(int calificacion, string? comentario)
+    {
+        EnsureNotDeleted();
+
+        if (Estado is not (EstadoCaso.Resuelto or EstadoCaso.Cerrado))
+            throw new DomainException("Solo se puede calificar un caso cuando está Resuelto o Cerrado.");
+
+        if (CalificacionCsat.HasValue)
+            throw new DomainException("Este caso ya cuenta con una calificación CSAT registrada.");
+
+        if (calificacion is < 1 or > 5)
+            throw new DomainException("La calificación CSAT debe estar entre 1 y 5.");
+
+        var comentarioLimpio = string.IsNullOrWhiteSpace(comentario) ? null : comentario.Trim();
+        if (comentarioLimpio is not null && comentarioLimpio.Length > 300)
+            throw new DomainException("El comentario CSAT no puede superar los 300 caracteres.");
+
+        CalificacionCsat = calificacion;
+        ComentarioCsat = comentarioLimpio;
+        FechaActualizacion = DateTime.UtcNow;
     }
 
     private void EnsureNotDeleted()

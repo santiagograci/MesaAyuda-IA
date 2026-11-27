@@ -14,6 +14,7 @@ import {
   CasoEliminado,
   CasoResumen,
   EstadoCaso,
+  EstadoSla,
   PrioridadCaso
 } from '../../../core/models/api.models';
 
@@ -203,9 +204,18 @@ import {
 
               <div class="case-footer">
                 <span>{{ caso.totalRespuestas }} resp.</span>
-                @if (caso.tieneSugerenciaPendiente) {
-                  <span class="badge badge-ia">✨ IA pendiente</span>
-                }
+                <div class="footer-pills">
+                  <span
+                    class="badge sla-pill"
+                    [class]="'badge sla-pill sla-' + caso.estadoSla"
+                    [title]="'Límite SLA: ' + (caso.fechaLimiteSla | date: 'dd/MM/yyyy HH:mm')"
+                  >
+                    {{ formatSla(caso.estadoSla) }}
+                  </span>
+                  @if (caso.tieneSugerenciaPendiente) {
+                    <span class="badge badge-ia">✨ IA pendiente</span>
+                  }
+                </div>
               </div>
             </button>
           }
@@ -379,6 +389,33 @@ import {
         font-size: 0.76rem;
         color: var(--text-secondary);
       }
+      .footer-pills {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      .sla-pill {
+        font-size: 0.7rem;
+        padding: 0.14rem 0.48rem;
+      }
+      .sla-EnTiempo {
+        background: var(--success-bg);
+        color: var(--success-text);
+      }
+      .sla-PorVencer {
+        background: var(--warn-bg);
+        color: var(--warn-text);
+      }
+      .sla-Vencido {
+        background: var(--danger-bg);
+        color: var(--danger-text);
+      }
+      .sla-Cumplido {
+        background: var(--accent-soft);
+        color: var(--accent-text);
+      }
       .empty-box {
         padding: 2rem 1rem;
         text-align: center;
@@ -451,5 +488,18 @@ export class CasosListComponent implements OnInit {
 
   formatEstado(estado: EstadoCaso): string {
     return estado === 'EnProceso' ? 'En Proceso' : estado;
+  }
+
+  formatSla(estadoSla: EstadoSla): string {
+    switch (estadoSla) {
+      case 'Cumplido':
+        return '✅ SLA Cumplido';
+      case 'PorVencer':
+        return '🟡 SLA Por vencer';
+      case 'Vencido':
+        return '🔴 SLA Vencido';
+      default:
+        return '🟢 SLA En tiempo';
+    }
   }
 }

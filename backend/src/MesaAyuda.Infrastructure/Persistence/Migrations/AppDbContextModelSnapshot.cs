@@ -28,8 +28,15 @@ namespace MesaAyuda.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<int?>("CalificacionCsat")
+                        .HasColumnType("integer");
+
                     b.Property<Guid>("ClienteId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("ComentarioCsat")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
 
                     b.Property<string>("Descripcion")
                         .IsRequired()

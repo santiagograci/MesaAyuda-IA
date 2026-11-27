@@ -1,8 +1,27 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, EventEmitter, Output, inject, signal } from '@angular/core';
+import {
+  Component,
+  DestroyRef,
+  EventEmitter,
+  OnInit,
+  Output,
+  inject,
+  signal
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import {
+  catchError,
+  debounceTime,
+  distinctUntilChanged,
+  map,
+  merge,
+  of,
+  switchMap
+} from 'rxjs';
+import {
   CasoDetalle,
+  DeflexionResponse,
   PRIORIDAD_INFO,
   PRIORIDAD_LIST,
   PrioridadCaso,
@@ -81,6 +100,46 @@ import { CasosService } from '../../../core/services/casos.service';
             <small class="field-error">La descripción debe tener entre 15 y 2000 caracteres.</small>
           }
         </div>
+
+        @if (deflexionLoading()) {
+          <div class="deflexion-loading" role="status">
+            <span class="spinner"></span> Buscando guías oficiales en la base de conocimiento...
+          </div>
+        }
+
+        @if (deflexion(); as guia) {
+          @if (guia.tieneSugerencia) {
+            <aside class="deflexion-card" role="region" aria-label="Asistente preventivo RAG">
+              <div class="deflexion-head">
+                <strong>
+                  💡 Antes de crear el ticket, revisa si esta guía oficial resuelve tu consulta:
+                </strong>
+              </div>
+              <p class="deflexion-answer">{{ guia.respuestaSugerida }}</p>
+
+              @if (guia.fuentes.length > 0) {
+                <ul class="deflexion-sources">
+                  @for (f of guia.fuentes; track $index) {
+                    <li>
+                      <strong>{{ f.documento }}</strong> · {{ f.seccion }}
+                    </li>
+                  }
+                </ul>
+              }
+
+              <div class="deflexion-actions">
+                <button
+                  type="button"
+                  class="btn btn-soft btn-sm"
+                  data-testid="deflect-ticket-btn"
+                  (click)="confirmarDeflexion()"
+                >
+                  ✅ ¡Esto resolvió mi duda! (No crear ticket)
+                </button>
+              </div>
+            </aside>
+          }
+        }
 
         @if (errorMsg()) {
           <div class="alert-error" role="alert">{{ errorMsg() }}</div>
@@ -169,26 +228,114 @@ import { CasosService } from '../../../core/services/casos.service';
         justify-content: flex-end;
         gap: 0.65rem;
       }
+      .deflexion-loading {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.82rem;
+        color: var(--text-secondary);
+      }
+      .deflexion-card {
+        padding: 1rem;
+        border-radius: calc(var(--radius-card) * 0.8);
+        background: var(--accent-soft);
+        border: 1px solid var(--accent-primary);
+        display: grid;
+        gap: 0.65rem;
+      }
+      .deflexion-head {
+        font-size: 0.88rem;
+        color: var(--accent-text);
+      }
+      .deflexion-answer {
+        margin: 0;
+        font-size: 0.86rem;
+        line-height: 1.5;
+        white-space: pre-line;
+      }
+      .deflexion-sources {
+        margin: 0;
+        padding-left: 1.15rem;
+        font-size: 0.78rem;
+        color: var(--text-secondary);
+        display: grid;
+        gap: 0.2rem;
+      }
+      .deflexion-actions {
+        display: flex;
+        justify-content: flex-end;
+      }
     `
   ]
 })
-export class CasoCreateComponent {
+export class CasoCreateComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly casosService = inject(CasosService);
+  private readonly destroyRef = inject(DestroyRef);
 
   @Output() created = new EventEmitter<CasoDetalle>();
   @Output() cancelled = new EventEmitter<void>();
+  @Output() deflected = new EventEmitter<void>();
 
   readonly prioridades = PRIORIDAD_LIST;
   readonly prioridadInfo = PRIORIDAD_INFO;
   readonly submitting = signal<boolean>(false);
   readonly errorMsg = signal<string>('');
+  readonly deflexionLoading = signal<boolean>(false);
+  readonly deflexion = signal<DeflexionResponse | null>(null);
 
   readonly form = this.fb.nonNullable.group({
     titulo: ['', [Validators.required, Validators.minLength(5), Validators.maxLength(150)]],
     prioridad: ['Media' as PrioridadCaso, [Validators.required]],
     descripcion: ['', [Validators.required, Validators.minLength(15), Validators.maxLength(2000)]]
   });
+
+  ngOnInit(): void {
+    merge(this.form.controls.titulo.valueChanges, this.form.controls.descripcion.valueChanges)
+      .pipe(
+        map(() => {
+          const { titulo, descripcion } = this.form.getRawValue();
+          return `${titulo.trim()}|||${descripcion.trim()}`;
+        }),
+        debounceTime(700),
+        distinctUntilChanged(),
+        switchMap(() => {
+          const { titulo, descripcion } = this.form.getRawValue();
+          const combined = `${titulo.trim()} ${descripcion.trim()}`.trim();
+          if (combined.length < 15) {
+            this.deflexionLoading.set(false);
+            this.deflexion.set(null);
+            return of(null);
+          }
+          this.deflexionLoading.set(true);
+          return this.casosService.consultarDeflexion(titulo.trim(), descripcion.trim()).pipe(
+            catchError(() => of(null))
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((res) => {
+        this.deflexionLoading.set(false);
+        if (res && res.tieneSugerencia) {
+          this.deflexion.set(res);
+        } else if (res !== null) {
+          this.deflexion.set(null);
+        }
+      });
+  }
+
+  confirmarDeflexion(): void {
+    this.form.reset(
+      {
+        titulo: '',
+        prioridad: 'Media',
+        descripcion: ''
+      },
+      { emitEvent: false }
+    );
+    this.deflexion.set(null);
+    this.deflected.emit();
+  }
 
   submit(): void {
     if (this.form.invalid) {

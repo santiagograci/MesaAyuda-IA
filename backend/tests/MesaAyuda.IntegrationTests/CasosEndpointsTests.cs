@@ -498,6 +498,76 @@ public class CasosEndpointsTests : IClassFixture<CustomWebApplicationFactory>
         Assert.Equal(4, uploadDto.FragmentosArchivo);
     }
 
+    [Fact]
+    public async Task Sla_DeflexionPreventiva_YEncuestaCsat_FuncionanDeExtremoAExtremo()
+    {
+        using var client = _factory.CreateClient();
+
+        var loginCliente = await LoginAsync(client, "cliente@empresa.com", "Ofima2026*");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", loginCliente.Token);
+
+        // 1. Deflexión preventiva antes de crear ticket
+        var deflexionRes = await client.PostAsJsonAsync(
+            "/api/casos/deflexion",
+            new DeflexionRequest(
+                "Error FAC-402 factura",
+                "Al intentar anular factura aceptada por DIAN arroja FAC-402."));
+        Assert.Equal(HttpStatusCode.OK, deflexionRes.StatusCode);
+        var deflexion = await deflexionRes.Content.ReadFromJsonAsync<DeflexionResponse>(JsonOptions);
+        Assert.NotNull(deflexion);
+        Assert.True(deflexion!.TieneSugerencia);
+        Assert.InRange(deflexion.Fuentes.Count, 1, 2);
+
+        // 2. Crear caso y validar cálculo SLA en listado y detalle
+        var createRes = await client.PostAsJsonAsync(
+            "/api/casos",
+            new CrearCasoRequest(
+                $"Caso SLA y CSAT {Guid.NewGuid():N}",
+                "Prueba completa de SLA por prioridad Alta y encuesta CSAT al resolver.",
+                "Alta"));
+        Assert.Equal(HttpStatusCode.Created, createRes.StatusCode);
+        var creado = await createRes.Content.ReadFromJsonAsync<CasoDetalleDto>(JsonOptions);
+        Assert.NotNull(creado);
+        Assert.Equal("EnTiempo", creado!.EstadoSla);
+        Assert.True((creado.FechaLimiteSla - creado.FechaCreacion).TotalHours >= 7.99);
+
+        // 3. Analista responde, pasa a Resuelto y verifica que Analista no puede enviar CSAT (403)
+        var loginAnalista = await LoginAsync(client, "analista@ofima.com", "Ofima2026*");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", loginAnalista.Token);
+
+        Assert.Equal(
+            HttpStatusCode.Created,
+            (await client.PostAsJsonAsync($"/api/casos/{creado.Id}/respuestas", new CrearRespuestaRequest("Solución aplicada correctamente en ERP."))).StatusCode);
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await client.PatchAsJsonAsync($"/api/casos/{creado.Id}/estado", new CambiarEstadoRequest("Resuelto"))).StatusCode);
+        Assert.Equal(
+            HttpStatusCode.Forbidden,
+            (await client.PostAsJsonAsync($"/api/casos/{creado.Id}/csat", new RegistrarCsatRequest(5, "Intento analista"))).StatusCode);
+
+        // 4. Cliente dueño envía CSAT (5 estrellas) -> 200 OK y queda reflejado en métricas
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", loginCliente.Token);
+        var csatRes = await client.PostAsJsonAsync(
+            $"/api/casos/{creado.Id}/csat",
+            new RegistrarCsatRequest(5, "Excelente tiempo de respuesta."));
+        Assert.Equal(HttpStatusCode.OK, csatRes.StatusCode);
+        var conCsat = await csatRes.Content.ReadFromJsonAsync<CasoDetalleDto>(JsonOptions);
+        Assert.NotNull(conCsat);
+        Assert.Equal(5, conCsat!.CalificacionCsat);
+        Assert.Equal("Cumplido", conCsat.EstadoSla);
+
+        // Reenvío duplicado falla con 400 BadRequest
+        Assert.Equal(
+            HttpStatusCode.BadRequest,
+            (await client.PostAsJsonAsync($"/api/casos/{creado.Id}/csat", new RegistrarCsatRequest(4, "Duplicado"))).StatusCode);
+
+        var metricasRes = await client.GetAsync("/api/casos/metricas");
+        var metricas = await metricasRes.Content.ReadFromJsonAsync<MetricasMesaAyudaDto>(JsonOptions);
+        Assert.NotNull(metricas);
+        Assert.True(metricas!.TotalEncuestasCsat >= 1);
+        Assert.NotNull(metricas.PromedioCsat);
+    }
+
     private static async Task<LoginResponse> LoginAsync(HttpClient client, string email, string password)
     {
         var response = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, password));

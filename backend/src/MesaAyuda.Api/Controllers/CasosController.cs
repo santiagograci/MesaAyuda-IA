@@ -354,6 +354,38 @@ public class CasosController : ControllerBase
         return Ok(aprobada);
     }
 
+    /// <summary>
+    /// Consulta al motor RAG para sugerir guías oficiales antes de registrar un caso (deflexión preventiva).
+    /// </summary>
+    [HttpPost("deflexion")]
+    [ProducesResponseType(typeof(DeflexionResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<DeflexionResponse>> DeflexionPreventiva(
+        [FromBody] DeflexionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var resultado = await _casoService.ConsultarDeflexionAsync(request, cancellationToken);
+        return Ok(resultado);
+    }
+
+    /// <summary>
+    /// Registra la calificación CSAT (1 a 5 estrellas) y comentario opcional del cliente propietario.
+    /// </summary>
+    [HttpPost("{id:guid}/csat")]
+    [Authorize(Roles = "Cliente")]
+    [ProducesResponseType(typeof(CasoDetalleDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<CasoDetalleDto>> RegistrarCsat(
+        Guid id,
+        [FromBody] RegistrarCsatRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var (usuarioId, rol, _) = GetCurrentUser();
+        var actualizado = await _casoService.RegistrarCsatAsync(id, request, usuarioId, rol, cancellationToken);
+        return Ok(actualizado);
+    }
+
     private (Guid UsuarioId, string Rol, string Nombre) GetCurrentUser()
     {
         var idClaim = User.FindFirstValue(ClaimTypes.NameIdentifier)

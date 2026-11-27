@@ -35,7 +35,9 @@ public record CasoResumenDto(
     DateTime FechaCreacion,
     string ClienteNombre,
     int TotalRespuestas,
-    bool TieneSugerenciaPendiente);
+    bool TieneSugerenciaPendiente,
+    DateTime FechaLimiteSla,
+    string EstadoSla);
 
 /// <summary>
 /// Vista detallada de un caso incluyendo su historial completo de respuestas y fuentes.
@@ -49,7 +51,11 @@ public record CasoDetalleDto(
     DateTime FechaCreacion,
     Guid ClienteId,
     string ClienteNombre,
-    List<RespuestaDto> Respuestas);
+    List<RespuestaDto> Respuestas,
+    DateTime FechaLimiteSla,
+    string EstadoSla,
+    int? CalificacionCsat,
+    string? ComentarioCsat);
 
 /// <summary>
 /// Solicitud para crear un nuevo caso de soporte técnico.
@@ -124,4 +130,28 @@ public record MetricasMesaAyudaDto(
     int SugerenciasIaGeneradas,
     int SugerenciasIaAprobadas,
     double TasaAdopcionIaPorcentaje,
-    int TokensTotalesConsumidos);
+    int TokensTotalesConsumidos,
+    double? PromedioCsat,
+    int TotalEncuestasCsat);
+
+/// <summary>
+/// Solicitud de deflexión preventiva antes de crear un ticket en base de datos.
+/// </summary>
+public record DeflexionRequest(string Titulo, string Descripcion);
+
+/// <summary>
+/// Respuesta de deflexión preventiva con guía oficial resumida y hasta 2 fuentes citadas.
+/// </summary>
+public record DeflexionResponse(
+    bool TieneSugerencia,
+    string RespuestaSugerida,
+    List<FuenteCitadaDto> Fuentes);
+
+/// <summary>
+/// Encuesta de satisfacción CSAT enviada por el cliente al resolver o cerrar su caso.
+/// </summary>
+public record RegistrarCsatRequest(
+    [Range(1, 5, ErrorMessage = "La calificación CSAT debe estar entre 1 y 5.")]
+    int Calificacion,
+    [MaxLength(300, ErrorMessage = "El comentario CSAT no puede superar los 300 caracteres.")]
+    string? Comentario = null);

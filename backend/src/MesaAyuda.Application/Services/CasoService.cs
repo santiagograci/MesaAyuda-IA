@@ -110,7 +110,9 @@ public class CasoService : ICasoService
             TotalRespuestas: esCliente
                 ? c.Respuestas.Count(r => !r.EsGeneradaPorIA || r.AprobadaPorAnalista)
                 : c.Respuestas.Count,
-            TieneSugerenciaPendiente: !esCliente && c.Respuestas.Any(r => r.EsGeneradaPorIA && !r.AprobadaPorAnalista)
+            TieneSugerenciaPendiente: !esCliente && c.Respuestas.Any(r => r.EsGeneradaPorIA && !r.AprobadaPorAnalista),
+            FechaLimiteSla: c.CalcularFechaLimiteSla(),
+            EstadoSla: c.EvaluarEstadoSla()
         )).ToList();
 
         return new PagedResult<CasoResumenDto>
@@ -442,6 +444,12 @@ public class CasoService : ICasoService
         var tasaAdopcion = generadas == 0 ? 0.0 : Math.Round((double)aprobadas * 100.0 / generadas, 1);
         var tokensTotales = respuestasIa.Sum(r => r.TokensUsados);
 
+        var calificados = casosActivos.Where(c => c.CalificacionCsat.HasValue).ToList();
+        var totalCsat = calificados.Count;
+        double? promedioCsat = totalCsat == 0
+            ? null
+            : Math.Round(calificados.Average(c => c.CalificacionCsat!.Value), 1);
+
         return new MetricasMesaAyudaDto(
             TotalCasos: totalCasos,
             CasosAbiertos: abiertos,
@@ -452,7 +460,48 @@ public class CasoService : ICasoService
             SugerenciasIaGeneradas: generadas,
             SugerenciasIaAprobadas: aprobadas,
             TasaAdopcionIaPorcentaje: tasaAdopcion,
-            TokensTotalesConsumidos: tokensTotales);
+            TokensTotalesConsumidos: tokensTotales,
+            PromedioCsat: promedioCsat,
+            TotalEncuestasCsat: totalCsat);
+    }
+
+    /// <inheritdoc />
+    public async Task<DeflexionResponse> ConsultarDeflexionAsync(
+        DeflexionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var consulta = $"{request.Titulo?.Trim()} {request.Descripcion?.Trim()}".Trim();
+        if (consulta.Length < 10)
+            return new DeflexionResponse(false, string.Empty, new List<FuenteCitadaDto>());
+
+        var ragResponse = await _ragServiceClient.ConsultarSugerenciaAsync(consulta, cancellationToken);
+        var fuentes = (ragResponse.Fuentes ?? new List<FuenteCitadaDto>()).Take(2).ToList();
+
+        if (!ragResponse.Anclado || fuentes.Count == 0)
+            return new DeflexionResponse(false, string.Empty, new List<FuenteCitadaDto>());
+
+        return new DeflexionResponse(true, ragResponse.Respuesta, fuentes);
+    }
+
+    /// <inheritdoc />
+    public async Task<CasoDetalleDto> RegistrarCsatAsync(
+        Guid id,
+        RegistrarCsatRequest request,
+        Guid usuarioId,
+        string rol,
+        CancellationToken cancellationToken = default)
+    {
+        if (!string.Equals(rol, nameof(RolUsuario.Cliente), StringComparison.OrdinalIgnoreCase))
+            throw new UnauthorizedAccessException("Solo el usuario Cliente propietario puede calificar el caso.");
+
+        var caso = await GetCasoOrThrowAsync(id, cancellationToken);
+        if (caso.ClienteId != usuarioId)
+            throw new UnauthorizedAccessException("Solo el cliente propietario del caso puede enviar la encuesta CSAT.");
+
+        caso.RegistrarCsat(request.Calificacion, request.Comentario);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return MapToDetalleDto(caso, soloPublicadas: true);
     }
 
     /// <inheritdoc />
@@ -505,7 +554,11 @@ public class CasoService : ICasoService
             FechaCreacion: caso.FechaCreacion,
             ClienteId: caso.ClienteId,
             ClienteNombre: clienteNombreOverride ?? caso.Cliente?.Nombre ?? "Cliente ERP",
-            Respuestas: respuestas);
+            Respuestas: respuestas,
+            FechaLimiteSla: caso.CalcularFechaLimiteSla(),
+            EstadoSla: caso.EvaluarEstadoSla(),
+            CalificacionCsat: caso.CalificacionCsat,
+            ComentarioCsat: caso.ComentarioCsat);
     }
 
     private static RespuestaDto MapToRespuestaDto(Respuesta respuesta)

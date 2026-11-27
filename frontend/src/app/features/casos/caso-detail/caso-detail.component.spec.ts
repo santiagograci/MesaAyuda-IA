@@ -21,7 +21,11 @@ describe('CasoDetailComponent (Borrado con cuenta regresiva y escalamiento de pr
     fechaCreacion: '2026-11-26T15:00:00Z',
     clienteId: 'cli-1',
     clienteNombre: 'Carlos Mendoza',
-    respuestas: []
+    respuestas: [],
+    fechaLimiteSla: '2026-11-26T23:00:00Z',
+    estadoSla: 'EnTiempo',
+    calificacionCsat: null,
+    comentarioCsat: null
   };
 
   beforeEach(async () => {
@@ -29,7 +33,8 @@ describe('CasoDetailComponent (Borrado con cuenta regresiva y escalamiento de pr
     casosServiceSpy = jasmine.createSpyObj<CasosService>('CasosService', [
       'eliminarCaso',
       'cambiarPrioridad',
-      'sugerirRespuestaStream'
+      'sugerirRespuestaStream',
+      'registrarCsat'
     ]);
     casosServiceSpy.eliminarCaso.and.returnValue(of(void 0));
 
@@ -252,5 +257,49 @@ describe('CasoDetailComponent (Borrado con cuenta regresiva y escalamiento de pr
     expect(updatedSpy).toHaveBeenCalledWith(streamedCaso);
     expect(el.textContent).toContain('Borradores de IA pendientes de aprobación (1)');
     expect(el.textContent).toContain('01-facturacion-electronica-y-anulaciones.md');
+  });
+
+  it('debe mostrar pill SLA y permitir al Cliente calificar con 1-5 estrellas un caso Resuelto', () => {
+    isAnalistaSignal.set(false);
+    component.caso = {
+      ...mockCaso,
+      estado: 'Resuelto',
+      estadoSla: 'Cumplido',
+      calificacionCsat: null,
+      comentarioCsat: null
+    };
+    fixture.detectChanges();
+
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.textContent).toContain('✅ SLA Cumplido');
+    expect(el.textContent).toContain('¿Cómo calificarías la solución recibida?');
+
+    const ratedCaso: CasoDetalle = {
+      ...mockCaso,
+      estado: 'Resuelto',
+      estadoSla: 'Cumplido',
+      calificacionCsat: 5,
+      comentarioCsat: 'Excelente guía del soporte.'
+    };
+    casosServiceSpy.registrarCsat.and.returnValue(of(ratedCaso));
+    const updatedSpy = spyOn(component.casoActualizado, 'emit');
+
+    const star5Btn = el.querySelector('[data-testid="csat-star-5"]') as HTMLButtonElement;
+    star5Btn.click();
+    component.csatComentario.set('Excelente guía del soporte.');
+    fixture.detectChanges();
+
+    const submitCsatBtn = el.querySelector('[data-testid="submit-csat-btn"]') as HTMLButtonElement;
+    submitCsatBtn.click();
+    fixture.detectChanges();
+
+    expect(casosServiceSpy.registrarCsat).toHaveBeenCalledWith(
+      'caso-delete-1',
+      5,
+      'Excelente guía del soporte.'
+    );
+    expect(updatedSpy).toHaveBeenCalledWith(ratedCaso);
+    expect(el.textContent).toContain('⭐ 5 / 5');
+    expect(el.textContent).toContain('Excelente guía del soporte.');
   });
 });

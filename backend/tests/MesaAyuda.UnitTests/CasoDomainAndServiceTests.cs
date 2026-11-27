@@ -297,6 +297,61 @@ public class CasoDomainAndServiceTests
         Assert.Equal(casoB.Id, item2.Id);
     }
 
+    [Fact]
+    public async Task Sla_Deflexion_YCsat_CumplenReglasDeNegocioYMetricas()
+    {
+        var cliente = new Usuario("Carlos Mendoza", "cliente@empresa.com", "hash", RolUsuario.Cliente);
+        var caso = new Caso(
+            "Bloqueo en facturación electrónica DIAN",
+            "El módulo presenta error FAC-402 al anular comprobantes.",
+            PrioridadCaso.Critica,
+            cliente.Id);
+
+        Assert.Equal(caso.FechaCreacion.AddHours(2), caso.CalcularFechaLimiteSla());
+        Assert.Equal("EnTiempo", caso.EvaluarEstadoSla(caso.FechaCreacion.AddMinutes(60)));
+        Assert.Equal("PorVencer", caso.EvaluarEstadoSla(caso.FechaCreacion.AddMinutes(95)));
+        Assert.Equal("Vencido", caso.EvaluarEstadoSla(caso.FechaCreacion.AddHours(3)));
+
+        var repo = new FakeCasoRepository(new[] { caso });
+        var uow = new FakeUnitOfWork();
+        var service = BuildCasoService(repo, new FakeUsuarioRepository(new[] { cliente }), uow, new StubRagServiceClient());
+
+        // Deflexión preventiva devuelve guía con hasta 2 fuentes sin guardar casos en repo
+        var deflexion = await service.ConsultarDeflexionAsync(
+            new DeflexionRequest("Error FAC-402", "¿Cómo anular una factura electrónica aceptada por DIAN?"));
+        Assert.True(deflexion.TieneSugerencia);
+        Assert.True(deflexion.Fuentes.Count <= 2);
+        Assert.Equal(0, uow.SaveChangesCount);
+
+        // No permite CSAT mientras está Abierto
+        await Assert.ThrowsAsync<DomainException>(() =>
+            service.RegistrarCsatAsync(caso.Id, new RegistrarCsatRequest(5, "Excelente"), cliente.Id, "Cliente"));
+
+        caso.AgregarRespuestaHumana("Se emitió Nota Crédito NC-01 correctamente.", "Analista");
+        caso.CambiarEstado(EstadoCaso.Resuelto);
+        Assert.Equal("Cumplido", caso.EvaluarEstadoSla());
+
+        var conCsat = await service.RegistrarCsatAsync(
+            caso.Id,
+            new RegistrarCsatRequest(5, "Solución rápida y precisa."),
+            cliente.Id,
+            "Cliente");
+
+        Assert.Equal(5, conCsat.CalificacionCsat);
+        Assert.Equal("Solución rápida y precisa.", conCsat.ComentarioCsat);
+        Assert.Equal("Cumplido", conCsat.EstadoSla);
+
+        // No permite duplicar CSAT ni que Analista califique
+        await Assert.ThrowsAsync<DomainException>(() =>
+            service.RegistrarCsatAsync(caso.Id, new RegistrarCsatRequest(4, "Cambio"), cliente.Id, "Cliente"));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            service.RegistrarCsatAsync(caso.Id, new RegistrarCsatRequest(5, null), cliente.Id, "Analista"));
+
+        var metricas = await service.ObtenerMetricasAsync(cliente.Id, "Analista");
+        Assert.Equal(1, metricas.TotalEncuestasCsat);
+        Assert.Equal(5.0, metricas.PromedioCsat);
+    }
+
     private static CasoService BuildCasoService(
         FakeCasoRepository casoRepo,
         FakeUsuarioRepository usuarioRepo,

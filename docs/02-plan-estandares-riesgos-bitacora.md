@@ -38,14 +38,14 @@ Equipo base: **2 Backend .NET**, **1 Frontend Angular**, **1 Python / IA & Datos
 
 ---
 
-## 4. Bitácora de Trabajo (6 Horas — Enfoque por Prioridad)
+## 4. Bitácora de Trabajo y Recorte Consciente de Alcance
 
 | Bloque | Tiempo | Actividad y Decisiones de Priorización |
 | :--- | :---: | :--- |
 | **1. Base Repo & Corpus ERP** | 0.8 h | Compose de 4 servicios, `.env` unificado y 6 manuales Ofima ERP con códigos (`FAC-402`, `CON-301`, `INV-108`, `SEC-423`) y reglas DIAN/laborales reales. |
-| **2. Motor RAG Python + Eval** | 1.7 h | Ingesta con chunking por secciones, búsqueda híbrida ChromaDB + BM25, mitigación de prompt injection, Strategy LLM, 6 pruebas `pytest` y calibración hasta **100% en las 3 métricas** (`docs/evaluacion-rag.md`). |
-| **3. Backend .NET 8 Clean Arch** | 1.8 h | Dominio DDD con máquina de estados, JWT por roles, EF Core + Postgres + `DbSeeder`, cliente RAG con Polly (`8s` + `2 retries` + CB), `ProblemDetails` y 10 pruebas `xUnit` (unitarias + integración). |
-| **4. Frontend Angular 18 Signals** | 1.2 h | Portal Split-Screen con diseño Claro/Oscuro + 3 máscaras + creador custom, login demo 1 clic, flujo completo IA con citas, aprobación por Analista y pruebas Jasmine/Karma. |
+| **2. Motor RAG Python + Eval** | 1.7 h | Ingesta con chunking por secciones, búsqueda híbrida ChromaDB + BM25, mitigación de prompt injection, Strategy LLM, gestión en vivo (`/documentos`, `/ingesta/archivo`) y **100% en evaluación empírica** (`docs/evaluacion-rag.md`). |
+| **3. Backend .NET 8 Clean Arch** | 1.8 h | Dominio DDD (máquina de estados, SLA por prioridad, escalamiento auditado, CSAT, papelera soft-delete), JWT por roles, EF Core + Postgres, cliente RAG con Polly, streaming SSE, deflexión preventiva y KPIs FinOps. |
+| **4. Frontend Angular 18 Signals** | 1.2 h | Split-Screen Claro/Oscuro + máscaras, SLA visual, deflexión antes de crear caso, encuesta CSAT 1–5 estrellas, cierre por inactividad (10m), búsqueda 300ms, gestor RAG modal y panel KPI ejecutivo. |
 | **5. CI, Docs y Validación E2E** | 0.5 h | Pipeline GitHub Actions (3 jobs), arquitectura C4/ADRs, matriz de riesgos y validación completa con `docker compose up --build`. |
 
-**Recortes deliberados para Fase 2 (interfaces preparadas):** se pospuso el streaming SSE y la integración con Langfuse externo para priorizar la robustez del anclaje estricto, el circuito de aprobación humana por el Analista, la resiliencia Polly y la cobertura de pruebas automatizadas en los 3 servicios.
+**Priorización de milla extra vs. recorte deliberado de alcance:** se priorizó implementar capacidades de alto valor operativo directamente probables de extremo a extremo en local —**motor SLA por severidad**, **deflexión RAG preventiva**, **encuesta CSAT con KPI**, **streaming SSE**, **papelera 30d con soft-delete** y **escalamiento auditado**— porque fortalecen el flujo central de soporte sin introducir dependencias externas. En contraste, se recortaron deliberadamente la **omnicanalidad IMAP/WhatsApp** y el **SSO corporativo con Microsoft Entra ID** (dejando los puertos e interfaces desacoplados para Fase 2) con el fin de preservar la portabilidad autocontenida del sistema mediante un único `docker compose up --build` sin credenciales de terceros.

@@ -99,6 +99,16 @@ import { KnowledgeBaseModalComponent } from './knowledge-base-modal/knowledge-ba
             <strong class="kpi-value">{{ m.tokensTotalesConsumidos | number }}</strong>
             <span class="kpi-sub">tokens procesados por IA</span>
           </article>
+
+          <article class="kpi-card card-surface">
+            <span class="kpi-label">Satisfacción CSAT</span>
+            <strong class="kpi-value">
+              {{ m.promedioCsat !== null ? '⭐ ' + (m.promedioCsat | number: '1.1-1') + ' / 5.0' : 'Sin datos' }}
+            </strong>
+            <span class="kpi-sub">
+              {{ m.totalEncuestasCsat }} encuesta(s) · {{ deflexionesCount() }} deflexión(es)
+            </span>
+          </article>
         </section>
       }
 
@@ -141,6 +151,7 @@ import { KnowledgeBaseModalComponent } from './knowledge-base-modal/knowledge-ba
             <app-caso-create
               (created)="onCasoCreated($event)"
               (cancelled)="creating.set(false)"
+              (deflected)="onCasoDeflected()"
             />
           } @else if (detailLoading()) {
             <div class="placeholder card-surface">
@@ -207,7 +218,7 @@ import { KnowledgeBaseModalComponent } from './knowledge-base-modal/knowledge-ba
       }
       .kpi-strip {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(5, minmax(0, 1fr));
         gap: 0.75rem;
         padding: 0.85rem 1.25rem 0;
       }
@@ -290,6 +301,7 @@ export class CasosShellComponent implements OnInit {
   readonly errorMsg = signal<string>('');
   readonly infoMsg = signal<string>('');
   readonly metricas = signal<MetricasMesaAyuda | null>(null);
+  readonly deflexionesCount = signal<number>(this.loadDeflexionesCount());
 
   ngOnInit(): void {
     this.loadCasos(true);
@@ -353,6 +365,30 @@ export class CasosShellComponent implements OnInit {
     this.page.set(1);
     this.loadCasos(false);
     this.loadMetricas();
+  }
+
+  onCasoDeflected(): void {
+    this.creating.set(false);
+    const next = this.deflexionesCount() + 1;
+    this.deflexionesCount.set(next);
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem('mesaayuda_deflexiones_count', String(next));
+      } catch {
+        // Ignora fallos de almacenamiento local.
+      }
+    }
+    this.infoMsg.set(
+      '✅ ¡Excelente! Tu duda fue resuelta con la guía oficial sin necesidad de abrir un ticket.'
+    );
+  }
+
+  private loadDeflexionesCount(): number {
+    if (typeof localStorage === 'undefined') {
+      return 0;
+    }
+    const raw = Number(localStorage.getItem('mesaayuda_deflexiones_count') ?? '0');
+    return Number.isFinite(raw) && raw > 0 ? raw : 0;
   }
 
   onCasoActualizado(detalle: CasoDetalle): void {

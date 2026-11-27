@@ -11,12 +11,15 @@ import {
   CasoResumen,
   CrearCasoRequest,
   CrearRespuestaRequest,
+  DeflexionRequest,
+  DeflexionResponse,
   EstadoCaso,
   FuenteCitada,
   MetricasMesaAyuda,
   PagedResult,
   PrioridadCaso,
   RagStreamEvent,
+  RegistrarCsatRequest,
   Respuesta,
   RestaurarDemoResponse
 } from '../models/api.models';
@@ -123,6 +126,20 @@ export class CasosService {
   /** Consulta indicadores operativos y consumo FinOps de IA desde GET /api/casos/metricas. */
   obtenerMetricas(): Observable<MetricasMesaAyuda> {
     return this.http.get<MetricasMesaAyuda>(`${this.baseUrl}/metricas`);
+  }
+
+  /** Consulta sugerencia preventiva RAG sin registrar un caso en base de datos. */
+  consultarDeflexion(titulo: string, descripcion: string): Observable<DeflexionResponse> {
+    const body: DeflexionRequest = { titulo, descripcion };
+    return this.http.post<DeflexionResponse>(`${this.baseUrl}/deflexion`, body);
+  }
+
+  /** Registra calificación CSAT (1-5 estrellas) del cliente propietario del caso. */
+  registrarCsat(id: string, calificacion: number, comentario?: string): Observable<CasoDetalle> {
+    const body: RegistrarCsatRequest = comentario?.trim()
+      ? { calificacion, comentario: comentario.trim() }
+      : { calificacion };
+    return this.http.post<CasoDetalle>(`${this.baseUrl}/${id}/csat`, body);
   }
 
   /**

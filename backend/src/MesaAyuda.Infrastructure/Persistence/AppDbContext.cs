@@ -88,6 +88,11 @@ public class AppDbContext : DbContext
 
             builder.Property(c => c.FechaActualizacion);
 
+            builder.Property(c => c.CalificacionCsat);
+
+            builder.Property(c => c.ComentarioCsat)
+                .HasMaxLength(300);
+
             builder.Property(c => c.Eliminado)
                 .IsRequired()
                 .HasDefaultValue(false);

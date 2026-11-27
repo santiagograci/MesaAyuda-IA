@@ -15,6 +15,7 @@ import { Subscription } from 'rxjs';
 import {
   CasoDetalle,
   EstadoCaso,
+  EstadoSla,
   FuenteCitada,
   PRIORIDAD_INFO,
   PRIORIDAD_LIST,
@@ -55,6 +56,13 @@ const PRIORIDAD_RANK: Record<PrioridadCaso, number> = {
                 [title]="prioridadInfo().descripcion"
               >
                 Prioridad {{ c.prioridad }}
+              </span>
+              <span
+                class="badge sla-pill"
+                [class]="'badge sla-pill sla-' + c.estadoSla"
+                [title]="'Límite SLA: ' + (c.fechaLimiteSla | date: 'dd/MM/yyyy HH:mm')"
+              >
+                {{ formatSla(c.estadoSla) }}
               </span>
               @if (canChangePriority()) {
                 <button
@@ -393,6 +401,59 @@ const PRIORIDAD_RANK: Record<PrioridadCaso, number> = {
           </div>
         </section>
 
+        @if (c.estado === 'Resuelto' || c.estado === 'Cerrado') {
+          <section class="csat-card" aria-label="Encuesta de satisfacción CSAT">
+            @if (c.calificacionCsat !== null) {
+              <div class="csat-readonly">
+                <strong>Satisfacción registrada (CSAT):</strong>
+                <span class="badge badge-ia">⭐ {{ c.calificacionCsat }} / 5</span>
+              </div>
+              @if (c.comentarioCsat) {
+                <p class="csat-comment">"{{ c.comentarioCsat }}"</p>
+              }
+            } @else if (!authService.isAnalista()) {
+              <div class="csat-form">
+                <strong>¿Cómo calificarías la solución recibida?</strong>
+                <div class="csat-stars" role="group" aria-label="Calificación de 1 a 5 estrellas">
+                  @for (star of [1, 2, 3, 4, 5]; track star) {
+                    <button
+                      type="button"
+                      class="star-btn"
+                      [attr.data-testid]="'csat-star-' + star"
+                      [class.active]="csatSeleccion() >= star"
+                      [disabled]="busy()"
+                      (click)="csatSeleccion.set(star)"
+                    >
+                      ★
+                    </button>
+                  }
+                  <span class="meta-text">{{ csatSeleccion() }} / 5</span>
+                </div>
+                <textarea
+                  rows="2"
+                  maxlength="300"
+                  class="form-control"
+                  [value]="csatComentario()"
+                  [disabled]="busy()"
+                  (input)="onCsatCommentInput($event)"
+                  placeholder="Comentario opcional sobre la atención (máx. 300 caracteres)..."
+                ></textarea>
+                <div class="csat-actions">
+                  <button
+                    type="button"
+                    class="btn btn-primary btn-sm"
+                    data-testid="submit-csat-btn"
+                    [disabled]="busy()"
+                    (click)="enviarCsat()"
+                  >
+                    Enviar calificación
+                  </button>
+                </div>
+              </div>
+            }
+          </section>
+        }
+
         @if (c.estado !== 'Cerrado') {
           <form [formGroup]="replyForm" (ngSubmit)="enviarRespuesta()" class="reply-form">
             <label for="replyText">Agregar respuesta humana</label>
@@ -688,6 +749,74 @@ const PRIORIDAD_RANK: Record<PrioridadCaso, number> = {
           visibility: hidden;
         }
       }
+      .sla-pill {
+        font-size: 0.74rem;
+      }
+      .sla-EnTiempo {
+        background: var(--success-bg);
+        color: var(--success-text);
+      }
+      .sla-PorVencer {
+        background: var(--warn-bg);
+        color: var(--warn-text);
+      }
+      .sla-Vencido {
+        background: var(--danger-bg);
+        color: var(--danger-text);
+      }
+      .sla-Cumplido {
+        background: var(--accent-soft);
+        color: var(--accent-text);
+      }
+      .csat-card {
+        padding: 1rem;
+        border-radius: calc(var(--radius-card) * 0.8);
+        border: 1px solid var(--border-color);
+        background: var(--bg-surface-alt);
+        display: grid;
+        gap: 0.55rem;
+      }
+      .csat-readonly {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        flex-wrap: wrap;
+      }
+      .csat-comment {
+        margin: 0;
+        font-size: 0.86rem;
+        color: var(--text-secondary);
+        font-style: italic;
+      }
+      .csat-form {
+        display: grid;
+        gap: 0.55rem;
+      }
+      .csat-stars {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+      }
+      .star-btn {
+        border: 1px solid var(--border-color);
+        background: var(--bg-surface);
+        color: var(--text-secondary);
+        border-radius: 6px;
+        width: 2rem;
+        height: 2rem;
+        font-size: 1.15rem;
+        cursor: pointer;
+        line-height: 1;
+      }
+      .star-btn.active {
+        color: #f59e0b;
+        border-color: #f59e0b;
+        background: var(--warn-bg);
+      }
+      .csat-actions {
+        display: flex;
+        justify-content: flex-end;
+      }
     `
   ]
 })
@@ -710,6 +839,8 @@ export class CasoDetailComponent implements OnDestroy {
       this.cancelarEliminacion();
       this.cerrarPanelPrioridad();
       this.resetStreamingState();
+      this.csatSeleccion.set(5);
+      this.csatComentario.set('');
     }
   }
 
@@ -733,6 +864,8 @@ export class CasoDetailComponent implements OnDestroy {
   readonly streamingText = signal<string>('');
   readonly streamingSources = signal<FuenteCitada[]>([]);
   readonly streamingTokens = signal<number>(0);
+  readonly csatSeleccion = signal<number>(5);
+  readonly csatComentario = signal<string>('');
 
   private countdownTimer: ReturnType<typeof setInterval> | null = null;
   private streamSub: Subscription | null = null;
@@ -803,6 +936,50 @@ export class CasoDetailComponent implements OnDestroy {
 
   formatEstado(estado: EstadoCaso): string {
     return estado === 'EnProceso' ? 'En Proceso' : estado;
+  }
+
+  formatSla(estadoSla: EstadoSla): string {
+    switch (estadoSla) {
+      case 'Cumplido':
+        return '✅ SLA Cumplido';
+      case 'PorVencer':
+        return '🟡 SLA Por vencer';
+      case 'Vencido':
+        return '🔴 SLA Vencido';
+      default:
+        return '🟢 SLA En tiempo';
+    }
+  }
+
+  onCsatCommentInput(event: Event): void {
+    this.csatComentario.set((event.target as HTMLTextAreaElement).value);
+  }
+
+  enviarCsat(): void {
+    const current = this.casoSignal();
+    if (!current) {
+      return;
+    }
+
+    this.busy.set(true);
+    this.errorMsg.set('');
+    this.infoMsg.set('');
+
+    this.casosService
+      .registrarCsat(current.id, this.csatSeleccion(), this.csatComentario())
+      .subscribe({
+        next: (actualizado) => {
+          this.busy.set(false);
+          this.casoSignal.set(actualizado);
+          this.csatComentario.set('');
+          this.infoMsg.set('¡Gracias por tu calificación CSAT!');
+          this.casoActualizado.emit(actualizado);
+        },
+        error: (err: unknown) => {
+          this.busy.set(false);
+          this.errorMsg.set(this.extractErrorMessage(err));
+        }
+      });
   }
 
   getDraftText(resp: Respuesta): string {

@@ -1,6 +1,9 @@
 /** Estados válidos del ciclo de vida de un caso de soporte. */
 export type EstadoCaso = 'Abierto' | 'EnProceso' | 'Resuelto' | 'Cerrado';
 
+/** Niveles de cumplimiento SLA calculados por el backend. */
+export type EstadoSla = 'Cumplido' | 'EnTiempo' | 'PorVencer' | 'Vencido';
+
 /** Prioridades operativas disponibles para clasificar un caso. */
 export type PrioridadCaso = 'Baja' | 'Media' | 'Alta' | 'Critica';
 
@@ -92,6 +95,8 @@ export interface CasoResumen {
   clienteNombre: string;
   totalRespuestas: number;
   tieneSugerenciaPendiente: boolean;
+  fechaLimiteSla: string;
+  estadoSla: EstadoSla;
 }
 
 /** Vista detallada de un caso con historial completo de respuestas. */
@@ -105,6 +110,10 @@ export interface CasoDetalle {
   clienteId: string;
   clienteNombre: string;
   respuestas: Respuesta[];
+  fechaLimiteSla: string;
+  estadoSla: EstadoSla;
+  calificacionCsat: number | null;
+  comentarioCsat: string | null;
 }
 
 /** Resultado paginado genérico alineado con PagedResult<T> de .NET 8. */
@@ -188,6 +197,27 @@ export interface MetricasMesaAyuda {
   sugerenciasIaAprobadas: number;
   tasaAdopcionIaPorcentaje: number;
   tokensTotalesConsumidos: number;
+  promedioCsat: number | null;
+  totalEncuestasCsat: number;
+}
+
+/** Solicitud de deflexión preventiva antes de crear un ticket. */
+export interface DeflexionRequest {
+  titulo: string;
+  descripcion: string;
+}
+
+/** Respuesta devuelta por POST /api/casos/deflexion. */
+export interface DeflexionResponse {
+  tieneSugerencia: boolean;
+  respuestaSugerida: string;
+  fuentes: FuenteCitada[];
+}
+
+/** Encuesta CSAT enviada por el cliente propietario tras resolver o cerrar un caso. */
+export interface RegistrarCsatRequest {
+  calificacion: number;
+  comentario?: string;
 }
 
 /** Eventos emitidos por el flujo SSE POST /api/casos/{id}/sugerencia/stream. */

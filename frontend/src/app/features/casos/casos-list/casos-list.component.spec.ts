@@ -15,7 +15,9 @@ describe('CasosListComponent', () => {
       fechaCreacion: '2026-11-26T15:00:00Z',
       clienteNombre: 'Carlos Mendoza - Contabilidad',
       totalRespuestas: 1,
-      tieneSugerenciaPendiente: true
+      tieneSugerenciaPendiente: true,
+      fechaLimiteSla: '2026-11-26T23:00:00Z',
+      estadoSla: 'EnTiempo'
     },
     {
       id: 'caso-2',
@@ -25,7 +27,9 @@ describe('CasosListComponent', () => {
       fechaCreacion: '2026-11-26T14:00:00Z',
       clienteNombre: 'Laura Gómez - Tesorería',
       totalRespuestas: 2,
-      tieneSugerenciaPendiente: false
+      tieneSugerenciaPendiente: false,
+      fechaLimiteSla: '2026-11-26T16:00:00Z',
+      estadoSla: 'Cumplido'
     }
   ];
 
@@ -56,6 +60,8 @@ describe('CasosListComponent', () => {
     expect(el.querySelector('.badge-prioridad-Alta')).not.toBeNull();
     expect(el.querySelector('.badge-prioridad-Critica')).not.toBeNull();
     expect(el.textContent).toContain('✨ IA pendiente');
+    expect(el.textContent).toContain('🟢 SLA En tiempo');
+    expect(el.textContent).toContain('✅ SLA Cumplido');
   });
 
   it('debe emitir estadoFilterChange al cambiar el filtro y selectCaso al elegir un caso', () => {
