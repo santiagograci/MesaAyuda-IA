@@ -39,20 +39,24 @@ def parse_markdown_sections(content: str, filename: str) -> list[tuple[str, str]
     current_h2: str | None = None
     current_section: str = default_title
     buffer: list[str] = []
+    has_body = False
     sections: list[tuple[str, str]] = []
     in_code_block = False
 
     def flush() -> None:
+        nonlocal has_body
         body = "\n".join(buffer).strip()
-        if body:
+        if body and has_body:
             sections.append((current_section, body))
         buffer.clear()
+        has_body = False
 
     for line in cleaned.split("\n"):
         stripped = line.strip()
         if stripped.startswith("```"):
             in_code_block = not in_code_block
             buffer.append(line)
+            has_body = True
             continue
 
         if not in_code_block:
@@ -80,6 +84,8 @@ def parse_markdown_sections(content: str, filename: str) -> list[tuple[str, str]
                 buffer.append(heading_prefix)
                 continue
 
+        if stripped:
+            has_body = True
         buffer.append(line)
 
     flush()
@@ -133,28 +139,12 @@ def _split_segment(segment: str, chunk_size: int, separators: tuple[str, ...]) -
                 piece = f"{piece}{punct}"
             parts.append(piece)
 
-        joiner = " " if keep_punct else sep
         atomic_units: list[str] = []
-        current = ""
-
         for piece in parts:
             if len(piece) > chunk_size:
-                if current:
-                    atomic_units.append(current)
-                    current = ""
                 atomic_units.extend(_split_segment(piece, chunk_size, separators[idx + 1 :]))
-                continue
-
-            candidate = f"{current}{joiner}{piece}" if current else piece
-            if len(candidate) <= chunk_size:
-                current = candidate
             else:
-                if current:
-                    atomic_units.append(current)
-                current = piece
-
-        if current:
-            atomic_units.append(current)
+                atomic_units.append(piece)
 
         if atomic_units:
             return atomic_units

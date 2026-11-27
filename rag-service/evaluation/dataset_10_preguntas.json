@@ -1,0 +1,72 @@
+[
+  {
+    "id": "P1",
+    "tipo": "in_domain",
+    "pregunta": "¿Cómo anulo una factura electrónica que ya fue aceptada por la DIAN y arroja el error FAC-402?",
+    "documento_esperado": "01-facturacion-electronica-y-anulaciones.md",
+    "palabras_clave_esperadas": ["Nota Crédito", "NC-01", "CUFE"]
+  },
+  {
+    "id": "P2",
+    "tipo": "in_domain",
+    "pregunta": "¿Cómo opera la contingencia tipo 03 ante caída de la DIAN y cuál es el plazo máximo de transmisión del XML?",
+    "documento_esperado": "01-facturacion-electronica-y-anulaciones.md",
+    "palabras_clave_esperadas": ["48 horas", "contingencia"]
+  },
+  {
+    "id": "P3",
+    "tipo": "in_domain",
+    "pregunta": "¿Cuáles son las causas principales cuando no cuadra el cierre contable y aparece el error CON-301?",
+    "documento_esperado": "02-cierre-contable-y-conciliacion.md",
+    "palabras_clave_esperadas": ["Borrador", "999905", "Diferencia en Cambio"]
+  },
+  {
+    "id": "P4",
+    "tipo": "in_domain",
+    "pregunta": "¿Qué permisos y pasos se requieren para realizar una reversión controlada del cierre de período contable?",
+    "documento_esperado": "02-cierre-contable-y-conciliacion.md",
+    "palabras_clave_esperadas": ["Contador General", "Reapertura"]
+  },
+  {
+    "id": "P5",
+    "tipo": "in_domain",
+    "pregunta": "¿Por qué el ERP bloquea la facturación con el error INV-108 de stock negativo y cómo se resuelve?",
+    "documento_esperado": "03-inventarios-kardex-y-bodegas.md",
+    "palabras_clave_esperadas": ["INV-108", "Traslado entre Bodegas"]
+  },
+  {
+    "id": "P6",
+    "tipo": "in_domain",
+    "pregunta": "¿Cómo se liquidan y pagan las incapacidades médicas por enfermedad común en la nómina?",
+    "documento_esperado": "04-nomina-electronica-y-novedades.md",
+    "palabras_clave_esperadas": ["66.67%", "día 3"]
+  },
+  {
+    "id": "P7",
+    "tipo": "in_domain",
+    "pregunta": "¿Cómo se genera el archivo plano bancario ACH para pagos masivos a proveedores?",
+    "documento_esperado": "05-cuentas-por-pagar-y-tesoreria.md",
+    "palabras_clave_esperadas": ["ACH", "Bancolombia"]
+  },
+  {
+    "id": "P8",
+    "tipo": "in_domain",
+    "pregunta": "¿Qué provoca el error SEC-423 de bloqueo de cuenta y cómo se realiza el desbloqueo del usuario?",
+    "documento_esperado": "06-seguridad-roles-y-auditoria-erp.md",
+    "palabras_clave_esperadas": ["5 intentos", "SEC-423", "Administrador"]
+  },
+  {
+    "id": "P9",
+    "tipo": "out_of_domain",
+    "pregunta": "¿Cómo configuro un cluster de Kubernetes en AWS EKS?",
+    "documento_esperado": null,
+    "palabras_clave_esperadas": []
+  },
+  {
+    "id": "P10",
+    "tipo": "out_of_domain",
+    "pregunta": "¿Qué ingredientes lleva un ajiaco santafereño?",
+    "documento_esperado": null,
+    "palabras_clave_esperadas": []
+  }
+]

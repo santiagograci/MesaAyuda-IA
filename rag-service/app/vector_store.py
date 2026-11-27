@@ -3,6 +3,7 @@ from __future__ import annotations
 import functools
 import re
 import unicodedata
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -14,14 +15,40 @@ from sentence_transformers import SentenceTransformer
 from app.config import settings
 from app.models import ChunkMetadata, TextChunk
 
+_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "a", "al", "algo", "algun", "alguna", "algunas", "alguno", "algunos", "ante",
+        "antes", "como", "con", "contra", "cual", "cuales", "cuando", "de", "del",
+        "desde", "donde", "e", "el", "ella", "ellas", "ello", "ellos", "en", "entre",
+        "era", "es", "esa", "esas", "ese", "eso", "esos", "esta", "estas", "este",
+        "esto", "estos", "fue", "ha", "hacia", "hasta", "hay", "la", "las", "le",
+        "les", "lo", "los", "mas", "me", "mi", "mis", "muy", "ni", "no", "nos", "o",
+        "para", "pero", "por", "porque", "que", "quien", "quienes", "se", "sea",
+        "segun", "si", "sin", "sobre", "son", "su", "sus", "tambien", "te", "tiene",
+        "toda", "todas", "todo", "todos", "tu", "tus", "un", "una", "unas", "uno",
+        "unos", "y", "ya", "yo",
+        "the", "is", "are", "to", "of", "in", "for", "on", "with", "as", "at", "by",
+        "an", "and", "or",
+    }
+)
+
 
 def _tokenize(text: str) -> list[str]:
-    """Tokeniza texto en minúsculas sin signos de puntuación ni diacríticos."""
+    """Tokeniza texto filtrando stopwords y preservando códigos alfanuméricos ERP."""
     normalized = unicodedata.normalize("NFKD", text.lower())
     without_accents = "".join(
         ch for ch in normalized if not unicodedata.combining(ch)
     )
-    return re.findall(r"[a-z0-9]+", without_accents)
+    hyphen_codes = [
+        code.replace("-", "")
+        for code in re.findall(r"[a-z]{2,4}-[a-z0-9]{2,4}", without_accents)
+    ]
+    words = [
+        token
+        for token in re.findall(r"[a-z0-9]+", without_accents)
+        if token not in _STOPWORDS and len(token) > 1
+    ]
+    return words + hyphen_codes
 
 
 class HybridVectorStore:
@@ -38,8 +65,11 @@ class HybridVectorStore:
     ) -> None:
         self.embedding_model_name = embedding_model or settings.embedding_model
         self.persist_dir = persist_dir or settings.chroma_persist_dir
-        self.collection_name = collection_name or settings.collection_name
         self.in_memory = in_memory
+        if in_memory and collection_name is None:
+            self.collection_name = f"{settings.collection_name}_{uuid.uuid4().hex[:8]}"
+        else:
+            self.collection_name = collection_name or settings.collection_name
 
         self._embedder: Any = (
             embedder
@@ -186,15 +216,17 @@ class HybridVectorStore:
             vector_scores[str(chunk_id)] = cosine_sim
 
         bm25_scores: dict[str, float] = {}
+        max_bm25 = 0.0
         if self._bm25 is not None and self._chunks:
             query_tokens = _tokenize(query)
             if query_tokens:
                 raw_scores = [max(0.0, float(s)) for s in self._bm25.get_scores(query_tokens)]
                 max_bm25 = max(raw_scores, default=0.0)
                 if max_bm25 > 0.0:
+                    denom = max(max_bm25, 6.0)
                     for chunk, raw_score in zip(self._chunks, raw_scores):
                         if raw_score > 0.0:
-                            bm25_scores[chunk.id] = raw_score / max_bm25
+                            bm25_scores[chunk.id] = raw_score / denom
 
         candidate_ids = set(vector_scores.keys()) | set(bm25_scores.keys())
         scored_results: list[tuple[TextChunk, float]] = []
@@ -205,7 +237,10 @@ class HybridVectorStore:
                 continue
             v_score = vector_scores.get(chunk_id, 0.0)
             b_score = bm25_scores.get(chunk_id, 0.0)
-            combined = round(max(0.0, min(1.0, 0.70 * v_score + 0.30 * b_score)), 4)
+            combined_raw = 0.70 * v_score + 0.30 * b_score
+            if max_bm25 == 0.0 and v_score < 0.75:
+                combined_raw *= 0.50
+            combined = round(max(0.0, min(1.0, combined_raw)), 4)
             scored_results.append((chunk, combined))
 
         scored_results.sort(key=lambda item: (-item[1], item[0].id))

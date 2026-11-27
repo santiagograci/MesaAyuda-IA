@@ -31,7 +31,7 @@ class GroundedExtractiveMockProvider(LLMProvider):
     PROVIDER_NAME = "grounded-mock"
 
     @staticmethod
-    def _extract_clean_points(texto: str, max_lines: int = 8) -> list[str]:
+    def _extract_clean_points(texto: str, max_lines: int = 12) -> list[str]:
         points: list[str] = []
         for raw_line in texto.splitlines():
             line = raw_line.strip()
@@ -62,7 +62,7 @@ class GroundedExtractiveMockProvider(LLMProvider):
             tokens = max(1, (len(system_prompt) + len(user_prompt) + len(respuesta)) // 4)
             return respuesta, tokens, self.PROVIDER_NAME
 
-        top_chunks = context_chunks[:3]
+        top_chunks = context_chunks[:4]
         sections_output: list[str] = [
             "De acuerdo con la documentación oficial de Ofima ERP, tenga en cuenta los siguientes lineamientos y pasos operativos:"
         ]
