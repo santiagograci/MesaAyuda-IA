@@ -93,8 +93,10 @@ public class CasoService : ICasoService
             Estado: c.Estado.ToString(),
             FechaCreacion: c.FechaCreacion,
             ClienteNombre: c.Cliente?.Nombre ?? "Cliente ERP",
-            TotalRespuestas: c.Respuestas.Count,
-            TieneSugerenciaPendiente: c.Respuestas.Any(r => r.EsGeneradaPorIA && !r.AprobadaPorAnalista)
+            TotalRespuestas: esCliente
+                ? c.Respuestas.Count(r => !r.EsGeneradaPorIA || r.AprobadaPorAnalista)
+                : c.Respuestas.Count,
+            TieneSugerenciaPendiente: !esCliente && c.Respuestas.Any(r => r.EsGeneradaPorIA && !r.AprobadaPorAnalista)
         )).ToList();
 
         return new PagedResult<CasoResumenDto>
@@ -115,7 +117,8 @@ public class CasoService : ICasoService
     {
         var caso = await GetCasoOrThrowAsync(id, cancellationToken);
         EnsureOwnershipOrAnalyst(caso, usuarioId, rol);
-        return MapToDetalleDto(caso);
+        var esAnalista = string.Equals(rol, nameof(RolUsuario.Analista), StringComparison.OrdinalIgnoreCase);
+        return MapToDetalleDto(caso, soloPublicadas: !esAnalista);
     }
 
     /// <inheritdoc />
@@ -176,6 +179,8 @@ public class CasoService : ICasoService
     public async Task<CasoDetalleDto> CambiarEstadoAsync(
         Guid id,
         string nuevoEstado,
+        Guid usuarioId,
+        string rol,
         CancellationToken cancellationToken = default)
     {
         if (!Enum.TryParse<EstadoCaso>(nuevoEstado?.Trim(), ignoreCase: true, out var estadoDestino)
@@ -185,10 +190,12 @@ public class CasoService : ICasoService
         }
 
         var caso = await GetCasoOrThrowAsync(id, cancellationToken);
+        EnsureOwnershipOrAnalyst(caso, usuarioId, rol);
         caso.CambiarEstado(estadoDestino);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-        return MapToDetalleDto(caso);
+        var esAnalista = string.Equals(rol, nameof(RolUsuario.Analista), StringComparison.OrdinalIgnoreCase);
+        return MapToDetalleDto(caso, soloPublicadas: !esAnalista);
     }
 
     /// <inheritdoc />
@@ -267,9 +274,13 @@ public class CasoService : ICasoService
             throw new UnauthorizedAccessException("No tiene permisos para acceder o modificar un caso de otro cliente.");
     }
 
-    private static CasoDetalleDto MapToDetalleDto(Caso caso, string? clienteNombreOverride = null)
+    private static CasoDetalleDto MapToDetalleDto(
+        Caso caso,
+        string? clienteNombreOverride = null,
+        bool soloPublicadas = false)
     {
         var respuestas = caso.Respuestas
+            .Where(r => !soloPublicadas || !r.EsGeneradaPorIA || r.AprobadaPorAnalista)
             .OrderBy(r => r.FechaCreacion)
             .Select(MapToRespuestaDto)
             .ToList();

@@ -4,6 +4,29 @@ export type EstadoCaso = 'Abierto' | 'EnProceso' | 'Resuelto' | 'Cerrado';
 /** Prioridades operativas disponibles para clasificar un caso. */
 export type PrioridadCaso = 'Baja' | 'Media' | 'Alta' | 'Critica';
 
+/** Guía operativa descriptiva de cada nivel de prioridad en MesaAyuda IA. */
+export const PRIORIDAD_INFO: Record<PrioridadCaso, { etiqueta: string; descripcion: string }> = {
+  Baja: {
+    etiqueta: 'Sin impacto operativo',
+    descripcion: 'Consultas generales, dudas de configuración o solicitudes sin impacto operativo.'
+  },
+  Media: {
+    etiqueta: 'Impacto moderado',
+    descripcion: 'Fallo funcional menor que permite continuar trabajando con alternativa temporal.'
+  },
+  Alta: {
+    etiqueta: 'Proceso clave afectado',
+    descripcion: 'Proceso clave afectado (facturación electrónica, nómina o inventarios) sin alternativa directa.'
+  },
+  Critica: {
+    etiqueta: 'Operación crítica detenida',
+    descripcion: 'Producción detenida, bloqueo de cierre contable/DIAN o caída total del ERP.'
+  }
+};
+
+/** Orden estándar de prioridades para formularios de selección. */
+export const PRIORIDAD_LIST: readonly PrioridadCaso[] = ['Baja', 'Media', 'Alta', 'Critica'];
+
 /** Roles autorizados dentro de la plataforma MesaAyuda IA. */
 export type RolUsuario = 'Cliente' | 'Analista';
 

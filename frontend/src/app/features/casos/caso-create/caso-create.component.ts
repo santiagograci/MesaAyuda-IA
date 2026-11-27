@@ -1,11 +1,18 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, EventEmitter, Output, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { CasoDetalle, PrioridadCaso, ProblemDetailsResponse } from '../../../core/models/api.models';
+import {
+  CasoDetalle,
+  PRIORIDAD_INFO,
+  PRIORIDAD_LIST,
+  PrioridadCaso,
+  ProblemDetailsResponse
+} from '../../../core/models/api.models';
 import { CasosService } from '../../../core/services/casos.service';
 
 /**
- * Formulario reactivo para registrar un nuevo caso de soporte ERP.
+ * Formulario reactivo para registrar un nuevo caso de soporte ERP
+ * con guía operativa de niveles de prioridad.
  */
 @Component({
   selector: 'app-caso-create',
@@ -40,9 +47,25 @@ import { CasosService } from '../../../core/services/casos.service';
           <label for="prioridad">Prioridad</label>
           <select id="prioridad" class="form-control" formControlName="prioridad">
             @for (p of prioridades; track p) {
-              <option [value]="p">{{ p }}</option>
+              <option [value]="p">{{ p }} — {{ prioridadInfo[p].etiqueta }}</option>
             }
           </select>
+
+          <div class="priority-guide-box" role="note" aria-label="Guía de prioridades">
+            <div class="guide-active">
+              <span class="badge" [class]="'badge badge-prioridad-' + form.controls.prioridad.value">
+                {{ form.controls.prioridad.value }}
+              </span>
+              <span>{{ prioridadInfo[form.controls.prioridad.value].descripcion }}</span>
+            </div>
+            <ul class="guide-list">
+              @for (p of prioridades; track p) {
+                <li [class.current]="form.controls.prioridad.value === p">
+                  <strong>{{ p }}:</strong> {{ prioridadInfo[p].descripcion }}
+                </li>
+              }
+            </ul>
+          </div>
         </div>
 
         <div class="field">
@@ -109,6 +132,34 @@ import { CasosService } from '../../../core/services/casos.service';
           font-weight: 600;
         }
       }
+      .priority-guide-box {
+        margin-top: 0.35rem;
+        padding: 0.75rem 0.9rem;
+        border-radius: calc(var(--radius-card) * 0.75);
+        background: var(--bg-surface-alt);
+        border: 1px solid var(--border-color);
+        display: grid;
+        gap: 0.5rem;
+      }
+      .guide-active {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        font-size: 0.84rem;
+        font-weight: 600;
+      }
+      .guide-list {
+        margin: 0;
+        padding-left: 1.1rem;
+        display: grid;
+        gap: 0.25rem;
+        font-size: 0.78rem;
+        color: var(--text-secondary);
+        li.current {
+          color: var(--text-primary);
+        }
+      }
       .field-error {
         color: var(--danger-text);
         font-size: 0.78rem;
@@ -128,7 +179,8 @@ export class CasoCreateComponent {
   @Output() created = new EventEmitter<CasoDetalle>();
   @Output() cancelled = new EventEmitter<void>();
 
-  readonly prioridades: readonly PrioridadCaso[] = ['Baja', 'Media', 'Alta', 'Critica'];
+  readonly prioridades = PRIORIDAD_LIST;
+  readonly prioridadInfo = PRIORIDAD_INFO;
   readonly submitting = signal<boolean>(false);
   readonly errorMsg = signal<string>('');
 

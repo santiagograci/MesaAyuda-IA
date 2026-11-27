@@ -44,10 +44,12 @@ public interface ICasoService
         string rol,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Ejecuta la máquina de estados del dominio sobre un caso.</summary>
+    /// <summary>Ejecuta la máquina de estados del dominio sobre un caso validando rol y propiedad.</summary>
     Task<CasoDetalleDto> CambiarEstadoAsync(
         Guid id,
         string nuevoEstado,
+        Guid usuarioId,
+        string rol,
         CancellationToken cancellationToken = default);
 
     /// <summary>Registra una respuesta humana y la publica en el historial del caso.</summary>

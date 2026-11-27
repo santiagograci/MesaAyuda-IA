@@ -45,11 +45,18 @@ export class ThemeService {
         if (maskId === 'custom') {
           root.style.setProperty('--accent-primary', accent);
           root.style.setProperty('--accent-hover', this.darkenHex(accent, 14));
-          root.style.setProperty('--accent-soft', this.hexToRgba(accent, 0.14));
+          root.style.setProperty('--accent-soft', this.hexToRgba(accent, 0.16));
+          root.style.setProperty('--accent-contrast', this.getReadableContrast(accent));
+          root.style.setProperty(
+            '--accent-text',
+            currentMode === 'dark' ? this.ensureDarkModeText(accent) : accent
+          );
         } else {
           root.style.removeProperty('--accent-primary');
           root.style.removeProperty('--accent-hover');
           root.style.removeProperty('--accent-soft');
+          root.style.removeProperty('--accent-contrast');
+          root.style.removeProperty('--accent-text');
         }
       }
 
@@ -151,5 +158,34 @@ export class ThemeService {
     const g = parseInt(clean.slice(2, 4), 16);
     const b = parseInt(clean.slice(4, 6), 16);
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+
+  private getReadableContrast(hex: string): string {
+    const clean = hex.replace('#', '');
+    if (clean.length !== 6) {
+      return '#ffffff';
+    }
+    const r = parseInt(clean.slice(0, 2), 16) / 255;
+    const g = parseInt(clean.slice(2, 4), 16) / 255;
+    const b = parseInt(clean.slice(4, 6), 16) / 255;
+    const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    return luminance > 0.62 ? '#0f172a' : '#ffffff';
+  }
+
+  private ensureDarkModeText(hex: string): string {
+    const clean = hex.replace('#', '');
+    if (clean.length !== 6) {
+      return '#93c5fd';
+    }
+    const r = parseInt(clean.slice(0, 2), 16);
+    const g = parseInt(clean.slice(2, 4), 16);
+    const b = parseInt(clean.slice(4, 6), 16);
+    const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    if (luminance >= 0.35) {
+      return hex;
+    }
+    // Aclara colores muy oscuros para mantener contraste sobre fondos oscuros.
+    const lift = (v: number): number => Math.min(255, Math.round(v + (255 - v) * 0.45));
+    return `#${[lift(r), lift(g), lift(b)].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
   }
 }

@@ -121,7 +121,8 @@ public class CasosController : ControllerBase
         [FromBody] CambiarEstadoRequest request,
         CancellationToken cancellationToken = default)
     {
-        var actualizado = await _casoService.CambiarEstadoAsync(id, request.NuevoEstado, cancellationToken);
+        var (usuarioId, rol, _) = GetCurrentUser();
+        var actualizado = await _casoService.CambiarEstadoAsync(id, request.NuevoEstado, usuarioId, rol, cancellationToken);
         return Ok(actualizado);
     }
 

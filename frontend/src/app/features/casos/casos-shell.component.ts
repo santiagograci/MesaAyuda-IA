@@ -192,14 +192,16 @@ export class CasosShellComponent implements OnInit {
   }
 
   onEstadoFilterChange(estado: EstadoCaso | ''): void {
+    this.creating.set(false);
     this.estadoFilter.set(estado);
     this.page.set(1);
-    this.loadCasos(false);
+    this.loadCasos(true);
   }
 
   onPageChange(nextPage: number): void {
-    this.page.set(nextPage);
-    this.loadCasos(false);
+    this.creating.set(false);
+    this.page.set(Math.max(1, nextPage));
+    this.loadCasos(true);
   }
 
   selectCaso(id: string): void {
@@ -243,11 +245,28 @@ export class CasosShellComponent implements OnInit {
     this.casosService.listarCasos(this.estadoFilter(), this.page(), 8).subscribe({
       next: (res) => {
         this.listLoading.set(false);
+
+        if (res.items.length === 0 && this.page() > 1) {
+          this.page.update((p) => p - 1);
+          this.loadCasos(true);
+          return;
+        }
+
         this.casos.set(res.items);
         this.totalPages.set(res.totalPages);
         this.totalCount.set(res.totalCount);
 
-        if (autoSelectFirst && res.items.length > 0 && !this.creating()) {
+        if (res.items.length === 0 && !this.creating()) {
+          this.selectedCaso.set(null);
+          return;
+        }
+
+        const currentSelected = this.selectedCaso();
+        const stillInPage = currentSelected
+          ? res.items.some((item) => item.id === currentSelected.id)
+          : false;
+
+        if ((autoSelectFirst || !stillInPage) && res.items.length > 0 && !this.creating()) {
           this.selectCaso(res.items[0].id);
         }
       },

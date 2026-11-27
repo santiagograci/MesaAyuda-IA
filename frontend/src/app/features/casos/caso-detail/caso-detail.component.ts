@@ -4,7 +4,6 @@ import {
   Component,
   EventEmitter,
   Input,
-  OnChanges,
   Output,
   computed,
   inject,
@@ -14,6 +13,7 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import {
   CasoDetalle,
   EstadoCaso,
+  PRIORIDAD_INFO,
   ProblemDetailsResponse,
   Respuesta
 } from '../../../core/models/api.models';
@@ -21,182 +21,233 @@ import { AuthService } from '../../../core/services/auth.service';
 import { CasosService } from '../../../core/services/casos.service';
 
 /**
- * Vista de detalle del caso con máquina de estados, historial de respuestas,
- * consulta al motor RAG, citas documentales y aprobación exclusiva del Analista.
+ * Vista de detalle del caso con señal reactiva, máquina de estados,
+ * borradores IA pendientes de aprobación del Analista, historial publicado y citas RAG.
  */
 @Component({
   selector: 'app-caso-detail',
   standalone: true,
   imports: [ReactiveFormsModule, DatePipe, DecimalPipe],
   template: `
-    <section class="detail-card card-surface">
-      <header class="detail-header">
-        <div class="title-block">
-          <div class="badges-row">
-            <span class="badge" [class]="'badge badge-estado-' + caso.estado">
-              {{ formatEstado(caso.estado) }}
-            </span>
-            <span class="badge" [class]="'badge badge-prioridad-' + caso.prioridad">
-              Prioridad {{ caso.prioridad }}
-            </span>
-            <span class="meta-text">
-              {{ caso.clienteNombre }} · {{ caso.fechaCreacion | date: 'dd/MM/yyyy HH:mm' }}
-            </span>
+    @if (casoSignal(); as c) {
+      <section class="detail-card card-surface">
+        <header class="detail-header">
+          <div class="title-block">
+            <div class="badges-row">
+              <span class="badge" [class]="'badge badge-estado-' + c.estado">
+                {{ formatEstado(c.estado) }}
+              </span>
+              <span
+                class="badge"
+                [class]="'badge badge-prioridad-' + c.prioridad"
+                [title]="prioridadInfo().descripcion"
+              >
+                Prioridad {{ c.prioridad }}
+              </span>
+              <span class="meta-text">
+                {{ c.clienteNombre }} · {{ c.fechaCreacion | date: 'dd/MM/yyyy HH:mm' }}
+              </span>
+            </div>
+            <h2>{{ c.titulo }}</h2>
+            <p class="priority-guide">
+              <strong>Criterio {{ c.prioridad }}:</strong> {{ prioridadInfo().descripcion }}
+            </p>
           </div>
-          <h2>{{ caso.titulo }}</h2>
+
+          <div class="header-actions">
+            @if (c.estado !== 'Cerrado') {
+              <button
+                type="button"
+                class="btn btn-soft btn-sm"
+                [disabled]="generatingIa() || busy()"
+                (click)="pedirSugerencia()"
+              >
+                @if (generatingIa()) {
+                  <span class="spinner"></span> Consultando RAG...
+                } @else {
+                  ✨ Pedir sugerencia a la IA
+                }
+              </button>
+            }
+
+            @if (authService.isAnalista()) {
+              <button
+                type="button"
+                class="btn btn-danger btn-sm"
+                [disabled]="busy()"
+                (click)="eliminar()"
+              >
+                Eliminar
+              </button>
+            }
+          </div>
+        </header>
+
+        <div class="description-box">
+          <p>{{ c.descripcion }}</p>
         </div>
 
-        <div class="header-actions">
-          @if (caso.estado !== 'Cerrado') {
-            <button
-              type="button"
-              class="btn btn-soft btn-sm"
-              [disabled]="generatingIa()"
-              (click)="pedirSugerencia()"
-            >
-              @if (generatingIa()) {
-                <span class="spinner"></span> Consultando RAG...
-              } @else {
-                ✨ Pedir sugerencia a la IA
-              }
-            </button>
-          }
+        @if (errorMsg()) {
+          <div class="alert-error" role="alert">{{ errorMsg() }}</div>
+        }
+        @if (infoMsg()) {
+          <div class="alert-info" role="status">{{ infoMsg() }}</div>
+        }
 
-          @if (authService.isAnalista()) {
-            <button
-              type="button"
-              class="btn btn-danger btn-sm"
-              [disabled]="busy()"
-              (click)="eliminar()"
-            >
-              Eliminar
-            </button>
-          }
-        </div>
-      </header>
-
-      <div class="description-box">
-        <p>{{ caso.descripcion }}</p>
-      </div>
-
-      @if (errorMsg()) {
-        <div class="alert-error" role="alert">{{ errorMsg() }}</div>
-      }
-      @if (infoMsg()) {
-        <div class="alert-info" role="status">{{ infoMsg() }}</div>
-      }
-
-      @if (allowedNextStates().length > 0) {
-        <div class="workflow-bar">
-          <span class="workflow-label">Flujo de estado:</span>
-          @for (nextState of allowedNextStates(); track nextState) {
-            <button
-              type="button"
-              class="btn btn-sm"
-              [class.btn-primary]="nextState === 'Cerrado' || nextState === 'Resuelto'"
-              [disabled]="busy()"
-              (click)="cambiarEstado(nextState)"
-            >
-              Pasar a {{ formatEstado(nextState) }}
-            </button>
-          }
-        </div>
-      }
-
-      <section class="history-section">
-        <h3>Historial de Atención ({{ visibleRespuestas().length }})</h3>
-
-        @if (visibleRespuestas().length === 0) {
-          <div class="empty-history">
-            Aún no hay respuestas publicadas. Puedes responder directamente o solicitar una sugerencia al motor RAG.
+        @if (allowedNextStates().length > 0) {
+          <div class="workflow-bar">
+            <span class="workflow-label">Flujo de estado:</span>
+            @for (nextState of allowedNextStates(); track nextState) {
+              <button
+                type="button"
+                class="btn btn-sm"
+                [class.btn-primary]="nextState === 'Cerrado' || nextState === 'Resuelto'"
+                [disabled]="busy()"
+                (click)="cambiarEstado(nextState)"
+              >
+                Pasar a {{ formatEstado(nextState) }}
+              </button>
+            }
+          </div>
+        } @else {
+          <div class="closed-banner">
+            Este caso se encuentra <strong>Cerrado</strong> de forma definitiva y no admite cambios ni nuevas respuestas.
           </div>
         }
 
-        <div class="responses-list">
-          @for (resp of visibleRespuestas(); track resp.id) {
-            <article [class]="resp.esGeneradaPorIA ? 'ia-card' : 'human-card'">
-              <div class="resp-header">
-                <div class="resp-author">
-                  <strong>{{ resp.autorNombre }}</strong>
-                  @if (resp.esGeneradaPorIA) {
-                    <span class="badge badge-ia">
-                      {{ resp.aprobadaPorAnalista ? '✨ IA Aprobada' : '✨ Borrador IA (Pendiente revisión)' }}
-                    </span>
-                  }
-                </div>
-                <span class="meta-text">{{ resp.fechaCreacion | date: 'dd/MM/yyyy HH:mm' }}</span>
-              </div>
+        @if (authService.isAnalista() && pendingIaDrafts().length > 0) {
+          <section class="pending-drafts-section" aria-label="Borradores de IA pendientes de aprobación">
+            <div class="section-heading">
+              <h3>✨ Borradores de IA pendientes de aprobación ({{ pendingIaDrafts().length }})</h3>
+              <span class="meta-text">El cliente aún no ve estos borradores hasta que los apruebes.</span>
+            </div>
 
-              @if (resp.esGeneradaPorIA && !resp.aprobadaPorAnalista && authService.isAnalista()) {
-                <div class="approval-box">
-                  <label class="edit-label" [for]="'edit-' + resp.id">
-                    Revisar y editar antes de publicar al cliente:
-                  </label>
-                  <textarea
-                    [id]="'edit-' + resp.id"
-                    rows="5"
-                    class="form-control"
-                    [value]="getDraftText(resp)"
-                    (input)="onDraftInput(resp.id, $event)"
-                  ></textarea>
-                  <div class="approval-actions">
-                    <button
-                      type="button"
-                      class="btn btn-primary btn-sm"
-                      [disabled]="busy() || caso.estado === 'Cerrado'"
-                      (click)="aprobarSugerencia(resp)"
-                    >
-                      Aprobar y Publicar al Cliente
-                    </button>
+            <div class="responses-list">
+              @for (draft of pendingIaDrafts(); track draft.id) {
+                <article class="ia-card">
+                  <div class="resp-header">
+                    <div class="resp-author">
+                      <strong>{{ draft.autorNombre }}</strong>
+                      <span class="badge badge-ia">✨ Borrador IA (Pendiente revisión)</span>
+                    </div>
+                    <span class="meta-text">{{ draft.fechaCreacion | date: 'dd/MM/yyyy HH:mm' }}</span>
                   </div>
-                </div>
-              } @else {
-                <p class="resp-body">{{ resp.texto }}</p>
-              }
 
-              @if (resp.fuentesCitadas.length > 0) {
-                <div class="citations-box">
-                  <div class="citations-title">Fuentes citadas del manual Ofima ERP:</div>
-                  <div class="citations-grid">
-                    @for (fuente of resp.fuentesCitadas; track $index) {
-                      <div class="citation-item">
-                        <div class="citation-head">
-                          <strong>{{ fuente.documento }}</strong>
-                          <span class="score-pill">{{ fuente.puntaje * 100 | number: '1.0-1' }}%</span>
-                        </div>
-                        <div class="citation-sec">{{ fuente.seccion }}</div>
-                        <div class="citation-frag">{{ fuente.fragmento }}</div>
+                  <div class="approval-box">
+                    <label class="edit-label" [for]="'edit-' + draft.id">
+                      Revisar y editar antes de publicar al cliente:
+                    </label>
+                    <textarea
+                      [id]="'edit-' + draft.id"
+                      rows="5"
+                      class="form-control"
+                      [disabled]="c.estado === 'Cerrado' || busy()"
+                      [value]="getDraftText(draft)"
+                      (input)="onDraftInput(draft.id, $event)"
+                    ></textarea>
+                    <div class="approval-actions">
+                      <button
+                        type="button"
+                        class="btn btn-primary btn-sm"
+                        [disabled]="busy() || c.estado === 'Cerrado'"
+                        (click)="aprobarSugerencia(draft)"
+                      >
+                        Aprobar y Publicar al Cliente
+                      </button>
+                    </div>
+                  </div>
+
+                  @if (draft.fuentesCitadas.length > 0) {
+                    <div class="citations-box">
+                      <div class="citations-title">Fuentes citadas del manual Ofima ERP:</div>
+                      <div class="citations-grid">
+                        @for (fuente of draft.fuentesCitadas; track $index) {
+                          <div class="citation-item">
+                            <div class="citation-head">
+                              <strong>{{ fuente.documento }}</strong>
+                              <span class="score-pill">{{ fuente.puntaje * 100 | number: '1.0-1' }}%</span>
+                            </div>
+                            <div class="citation-sec">{{ fuente.seccion }}</div>
+                            <div class="citation-frag">{{ fuente.fragmento }}</div>
+                          </div>
+                        }
                       </div>
+                    </div>
+                  }
+                </article>
+              }
+            </div>
+          </section>
+        }
+
+        <section class="history-section">
+          <h3>Historial de Atención ({{ publishedRespuestas().length }})</h3>
+
+          @if (publishedRespuestas().length === 0) {
+            <div class="empty-history">
+              Aún no hay respuestas publicadas. Puedes responder directamente o solicitar una sugerencia al motor RAG.
+            </div>
+          }
+
+          <div class="responses-list">
+            @for (resp of publishedRespuestas(); track resp.id) {
+              <article [class]="resp.esGeneradaPorIA ? 'ia-card' : 'human-card'">
+                <div class="resp-header">
+                  <div class="resp-author">
+                    <strong>{{ resp.autorNombre }}</strong>
+                    @if (resp.esGeneradaPorIA) {
+                      <span class="badge badge-ia">✨ IA Aprobada</span>
                     }
                   </div>
+                  <span class="meta-text">{{ resp.fechaCreacion | date: 'dd/MM/yyyy HH:mm' }}</span>
                 </div>
-              }
-            </article>
-          }
-        </div>
-      </section>
 
-      @if (caso.estado !== 'Cerrado') {
-        <form [formGroup]="replyForm" (ngSubmit)="enviarRespuesta()" class="reply-form">
-          <label for="replyText">Agregar respuesta humana</label>
-          <textarea
-            id="replyText"
-            rows="3"
-            class="form-control"
-            formControlName="texto"
-            placeholder="Escribe una respuesta o aclaración sobre el caso..."
-          ></textarea>
-          @if (replyForm.controls.texto.touched && replyForm.controls.texto.invalid) {
-            <small class="field-error">La respuesta debe tener entre 5 y 4000 caracteres.</small>
-          }
-          <div class="reply-actions">
-            <button type="submit" class="btn btn-primary" [disabled]="busy()">
-              Enviar Respuesta
-            </button>
+                <p class="resp-body">{{ resp.texto }}</p>
+
+                @if (resp.fuentesCitadas.length > 0) {
+                  <div class="citations-box">
+                    <div class="citations-title">Fuentes citadas del manual Ofima ERP:</div>
+                    <div class="citations-grid">
+                      @for (fuente of resp.fuentesCitadas; track $index) {
+                        <div class="citation-item">
+                          <div class="citation-head">
+                            <strong>{{ fuente.documento }}</strong>
+                            <span class="score-pill">{{ fuente.puntaje * 100 | number: '1.0-1' }}%</span>
+                          </div>
+                          <div class="citation-sec">{{ fuente.seccion }}</div>
+                          <div class="citation-frag">{{ fuente.fragmento }}</div>
+                        </div>
+                      }
+                    </div>
+                  </div>
+                }
+              </article>
+            }
           </div>
-        </form>
-      }
-    </section>
+        </section>
+
+        @if (c.estado !== 'Cerrado') {
+          <form [formGroup]="replyForm" (ngSubmit)="enviarRespuesta()" class="reply-form">
+            <label for="replyText">Agregar respuesta humana</label>
+            <textarea
+              id="replyText"
+              rows="3"
+              class="form-control"
+              formControlName="texto"
+              placeholder="Escribe una respuesta o aclaración sobre el caso..."
+            ></textarea>
+            @if (replyForm.controls.texto.touched && replyForm.controls.texto.invalid) {
+              <small class="field-error">La respuesta debe tener entre 5 y 4000 caracteres.</small>
+            }
+            <div class="reply-actions">
+              <button type="submit" class="btn btn-primary" [disabled]="busy()">
+                Enviar Respuesta
+              </button>
+            </div>
+          </form>
+        }
+      </section>
+    }
   `,
   styles: [
     `
@@ -215,11 +266,16 @@ import { CasosService } from '../../../core/services/casos.service';
       }
       .title-block {
         display: grid;
-        gap: 0.45rem;
+        gap: 0.4rem;
         h2 {
           margin: 0;
           font-size: 1.25rem;
         }
+      }
+      .priority-guide {
+        margin: 0;
+        font-size: 0.8rem;
+        color: var(--text-secondary);
       }
       .badges-row {
         display: flex;
@@ -255,12 +311,21 @@ import { CasosService } from '../../../core/services/casos.service';
         border-radius: calc(var(--radius-card) * 0.8);
         border: 1px dashed var(--border-color);
       }
+      .closed-banner {
+        padding: 0.75rem 1rem;
+        border-radius: calc(var(--radius-card) * 0.8);
+        background: var(--bg-surface-alt);
+        border: 1px solid var(--border-color);
+        color: var(--text-secondary);
+        font-size: 0.84rem;
+      }
       .workflow-label {
         font-size: 0.82rem;
         font-weight: 600;
         color: var(--text-secondary);
         margin-right: 0.25rem;
       }
+      .pending-drafts-section,
       .history-section {
         display: grid;
         gap: 0.8rem;
@@ -268,6 +333,13 @@ import { CasosService } from '../../../core/services/casos.service';
           margin: 0;
           font-size: 1rem;
         }
+      }
+      .section-heading {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: 0.5rem;
       }
       .empty-history {
         padding: 1rem;
@@ -311,7 +383,7 @@ import { CasosService } from '../../../core/services/casos.service';
       .edit-label {
         font-size: 0.8rem;
         font-weight: 600;
-        color: var(--accent-primary);
+        color: var(--accent-text);
       }
       .approval-actions,
       .reply-actions {
@@ -347,10 +419,10 @@ import { CasosService } from '../../../core/services/casos.service';
       }
       .score-pill {
         font-weight: 700;
-        color: var(--accent-primary);
+        color: var(--accent-text);
       }
       .citation-sec {
-        color: var(--accent-primary);
+        color: var(--accent-text);
         font-weight: 600;
         margin: 0.15rem 0;
       }
@@ -374,12 +446,29 @@ import { CasosService } from '../../../core/services/casos.service';
     `
   ]
 })
-export class CasoDetailComponent implements OnChanges {
+export class CasoDetailComponent {
   private readonly fb = inject(FormBuilder);
   private readonly casosService = inject(CasosService);
   readonly authService = inject(AuthService);
 
-  @Input({ required: true }) caso!: CasoDetalle;
+  readonly casoSignal = signal<CasoDetalle | null>(null);
+
+  @Input({ required: true })
+  set caso(value: CasoDetalle) {
+    const previousId = this.casoSignal()?.id;
+    this.casoSignal.set(value);
+    if (previousId !== value.id) {
+      this.errorMsg.set('');
+      this.infoMsg.set('');
+      this.draftEdits.set({});
+      this.replyForm.reset();
+    }
+  }
+
+  get caso(): CasoDetalle {
+    return this.casoSignal()!;
+  }
+
   @Output() casoActualizado = new EventEmitter<CasoDetalle>();
   @Output() casoEliminado = new EventEmitter<string>();
 
@@ -389,8 +478,13 @@ export class CasoDetailComponent implements OnChanges {
   readonly infoMsg = signal<string>('');
   readonly draftEdits = signal<Record<string, string>>({});
 
+  readonly prioridadInfo = computed(() => {
+    const prioridad = this.casoSignal()?.prioridad ?? 'Media';
+    return PRIORIDAD_INFO[prioridad];
+  });
+
   readonly allowedNextStates = computed<EstadoCaso[]>(() => {
-    switch (this.caso.estado) {
+    switch (this.casoSignal()?.estado) {
       case 'Abierto':
         return ['EnProceso'];
       case 'EnProceso':
@@ -402,21 +496,19 @@ export class CasoDetailComponent implements OnChanges {
     }
   });
 
-  readonly visibleRespuestas = computed<Respuesta[]>(() => {
-    if (this.authService.isAnalista()) {
-      return this.caso.respuestas;
-    }
-    return this.caso.respuestas.filter((r) => !r.esGeneradaPorIA || r.aprobadaPorAnalista);
+  readonly pendingIaDrafts = computed<Respuesta[]>(() => {
+    const respuestas = this.casoSignal()?.respuestas ?? [];
+    return respuestas.filter((r) => r.esGeneradaPorIA && !r.aprobadaPorAnalista);
+  });
+
+  readonly publishedRespuestas = computed<Respuesta[]>(() => {
+    const respuestas = this.casoSignal()?.respuestas ?? [];
+    return respuestas.filter((r) => !r.esGeneradaPorIA || r.aprobadaPorAnalista);
   });
 
   readonly replyForm = this.fb.nonNullable.group({
     texto: ['', [Validators.required, Validators.minLength(5), Validators.maxLength(4000)]]
   });
-
-  ngOnChanges(): void {
-    this.errorMsg.set('');
-    this.infoMsg.set('');
-  }
 
   formatEstado(estado: EstadoCaso): string {
     return estado === 'EnProceso' ? 'En Proceso' : estado;
@@ -432,19 +524,24 @@ export class CasoDetailComponent implements OnChanges {
   }
 
   pedirSugerencia(): void {
+    const current = this.casoSignal();
+    if (!current) {
+      return;
+    }
+
     this.generatingIa.set(true);
     this.errorMsg.set('');
     this.infoMsg.set('');
 
-    this.casosService.pedirSugerenciaIA(this.caso.id).subscribe({
+    this.casosService.pedirSugerenciaIA(current.id).subscribe({
       next: () => {
         this.generatingIa.set(false);
         this.infoMsg.set(
           this.authService.isAnalista()
-            ? 'Sugerencia IA generada. Revísala y publícala cuando esté lista.'
+            ? 'Sugerencia IA generada. Revísala en la sección de borradores y publícala cuando esté lista.'
             : 'Sugerencia IA generada y enviada a revisión del Analista.'
         );
-        this.reloadCaso();
+        this.reloadCaso(current.id);
       },
       error: (err: unknown) => {
         this.generatingIa.set(false);
@@ -454,6 +551,11 @@ export class CasoDetailComponent implements OnChanges {
   }
 
   aprobarSugerencia(resp: Respuesta): void {
+    const current = this.casoSignal();
+    if (!current) {
+      return;
+    }
+
     const textoFinal = this.getDraftText(resp).trim();
     if (textoFinal.length < 5) {
       this.errorMsg.set('El texto aprobado debe tener al menos 5 caracteres.');
@@ -464,11 +566,16 @@ export class CasoDetailComponent implements OnChanges {
     this.errorMsg.set('');
     this.infoMsg.set('');
 
-    this.casosService.aprobarSugerenciaIA(this.caso.id, resp.id, textoFinal).subscribe({
+    this.casosService.aprobarSugerenciaIA(current.id, resp.id, textoFinal).subscribe({
       next: () => {
         this.busy.set(false);
+        this.draftEdits.update((prev) => {
+          const next = { ...prev };
+          delete next[resp.id];
+          return next;
+        });
         this.infoMsg.set('Respuesta IA aprobada y publicada al cliente.');
-        this.reloadCaso();
+        this.reloadCaso(current.id);
       },
       error: (err: unknown) => {
         this.busy.set(false);
@@ -478,14 +585,20 @@ export class CasoDetailComponent implements OnChanges {
   }
 
   cambiarEstado(nuevoEstado: EstadoCaso): void {
+    const current = this.casoSignal();
+    if (!current) {
+      return;
+    }
+
     this.busy.set(true);
     this.errorMsg.set('');
     this.infoMsg.set('');
 
-    this.casosService.cambiarEstado(this.caso.id, nuevoEstado).subscribe({
+    this.casosService.cambiarEstado(current.id, nuevoEstado).subscribe({
       next: (actualizado) => {
         this.busy.set(false);
-        this.caso = actualizado;
+        this.casoSignal.set(actualizado);
+        this.infoMsg.set(`Estado actualizado a ${this.formatEstado(actualizado.estado)}.`);
         this.casoActualizado.emit(actualizado);
       },
       error: (err: unknown) => {
@@ -496,6 +609,11 @@ export class CasoDetailComponent implements OnChanges {
   }
 
   enviarRespuesta(): void {
+    const current = this.casoSignal();
+    if (!current) {
+      return;
+    }
+
     if (this.replyForm.invalid) {
       this.replyForm.markAllAsTouched();
       return;
@@ -505,11 +623,12 @@ export class CasoDetailComponent implements OnChanges {
     this.errorMsg.set('');
     this.infoMsg.set('');
 
-    this.casosService.agregarRespuesta(this.caso.id, this.replyForm.getRawValue().texto).subscribe({
+    this.casosService.agregarRespuesta(current.id, this.replyForm.getRawValue().texto).subscribe({
       next: () => {
         this.busy.set(false);
         this.replyForm.reset();
-        this.reloadCaso();
+        this.infoMsg.set('Respuesta publicada en el historial del caso.');
+        this.reloadCaso(current.id);
       },
       error: (err: unknown) => {
         this.busy.set(false);
@@ -519,13 +638,18 @@ export class CasoDetailComponent implements OnChanges {
   }
 
   eliminar(): void {
+    const current = this.casoSignal();
+    if (!current) {
+      return;
+    }
+
     this.busy.set(true);
     this.errorMsg.set('');
 
-    this.casosService.eliminarCaso(this.caso.id).subscribe({
+    this.casosService.eliminarCaso(current.id).subscribe({
       next: () => {
         this.busy.set(false);
-        this.casoEliminado.emit(this.caso.id);
+        this.casoEliminado.emit(current.id);
       },
       error: (err: unknown) => {
         this.busy.set(false);
@@ -534,10 +658,10 @@ export class CasoDetailComponent implements OnChanges {
     });
   }
 
-  private reloadCaso(): void {
-    this.casosService.obtenerCaso(this.caso.id).subscribe({
+  private reloadCaso(casoId: string): void {
+    this.casosService.obtenerCaso(casoId).subscribe({
       next: (actualizado) => {
-        this.caso = actualizado;
+        this.casoSignal.set(actualizado);
         this.casoActualizado.emit(actualizado);
       },
       error: (err: unknown) => {

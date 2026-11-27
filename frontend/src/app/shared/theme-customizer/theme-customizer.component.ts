@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, HostListener, inject, signal } from '@angular/core';
 import { ThemeService } from '../../core/services/theme.service';
 
 /**
@@ -32,9 +32,19 @@ import { ThemeService } from '../../core/services/theme.service';
         <div class="popover card-surface" role="dialog" aria-label="Personalización de tema">
           <div class="popover-header">
             <strong>Máscaras de Diseño</strong>
-            <button type="button" class="btn btn-sm" (click)="themeService.resetTheme()">
-              Restablecer
-            </button>
+            <div class="popover-actions">
+              <button type="button" class="btn btn-sm" (click)="themeService.resetTheme()">
+                Restablecer
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm"
+                aria-label="Cerrar selector de máscaras"
+                (click)="isOpen.set(false)"
+              >
+                ✕
+              </button>
+            </div>
           </div>
 
           <div class="preset-list">
@@ -98,6 +108,10 @@ import { ThemeService } from '../../core/services/theme.service';
         align-items: center;
         margin-bottom: 0.75rem;
       }
+      .popover-actions {
+        display: inline-flex;
+        gap: 0.35rem;
+      }
       .preset-list {
         display: grid;
         gap: 0.45rem;
@@ -153,6 +167,11 @@ export class ThemeCustomizerComponent {
 
   togglePopover(): void {
     this.isOpen.update((v) => !v);
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscape(): void {
+    this.isOpen.set(false);
   }
 
   onColorChange(event: Event): void {
