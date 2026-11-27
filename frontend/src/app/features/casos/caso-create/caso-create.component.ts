@@ -28,6 +28,11 @@ import {
   ProblemDetailsResponse
 } from '../../../core/models/api.models';
 import { CasosService } from '../../../core/services/casos.service';
+import { SafeMarkdownPipe } from '../../../shared/pipes/safe-markdown.pipe';
+import {
+  readImageAsDataUrl,
+  validateImageAttachment
+} from '../../../shared/utils/image-attachment.util';
 
 /**
  * Formulario reactivo para registrar un nuevo caso de soporte ERP
@@ -36,9 +41,9 @@ import { CasosService } from '../../../core/services/casos.service';
 @Component({
   selector: 'app-caso-create',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, SafeMarkdownPipe],
   template: `
-    <section class="create-card card-surface">
+    <section class="create-card card-surface anim-fade-up">
       <header class="create-header">
         <div>
           <h2>Nuevo Caso de Soporte ERP</h2>
@@ -101,6 +106,42 @@ import { CasosService } from '../../../core/services/casos.service';
           }
         </div>
 
+        <div class="field">
+          <label for="createImageInput">📎 Adjuntar captura (PNG/JPG)</label>
+          <div class="attachment-picker">
+            <input
+              #createImageFileInput
+              id="createImageInput"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              class="form-control"
+              data-testid="create-image-input"
+              [disabled]="submitting()"
+              (change)="onImageSelected($event)"
+            />
+            <small class="attachment-hint">Opcional · PNG, JPG o WebP (máx. 2 MB).</small>
+          </div>
+          @if (imagenError()) {
+            <small class="field-error" data-testid="create-image-error">{{ imagenError() }}</small>
+          }
+          @if (imagenAdjunta(); as preview) {
+            <div class="attachment-preview">
+              <img [src]="preview" alt="Vista previa de captura adjunta" class="attachment-thumb" />
+              <div class="attachment-meta">
+                <span>{{ imagenNombre() || 'Captura adjunta' }}</span>
+                <button
+                  type="button"
+                  class="btn btn-sm"
+                  data-testid="remove-create-image-btn"
+                  (click)="quitarImagen(createImageFileInput)"
+                >
+                  ✕ Quitar
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+
         @if (deflexionLoading()) {
           <div class="deflexion-loading" role="status">
             <span class="spinner"></span> Buscando guías oficiales en la base de conocimiento...
@@ -109,13 +150,13 @@ import { CasosService } from '../../../core/services/casos.service';
 
         @if (deflexion(); as guia) {
           @if (guia.tieneSugerencia) {
-            <aside class="deflexion-card" role="region" aria-label="Asistente preventivo RAG">
+            <aside class="deflexion-card anim-fade-up" role="region" aria-label="Asistente preventivo RAG">
               <div class="deflexion-head">
                 <strong>
                   💡 Antes de crear el ticket, revisa si esta guía oficial resuelve tu consulta:
                 </strong>
               </div>
-              <p class="deflexion-answer">{{ guia.respuestaSugerida }}</p>
+              <div class="deflexion-answer md-content" [innerHTML]="guia.respuestaSugerida | safeMarkdown"></div>
 
               @if (guia.fuentes.length > 0) {
                 <ul class="deflexion-sources">
@@ -265,6 +306,39 @@ import { CasosService } from '../../../core/services/casos.service';
         display: flex;
         justify-content: flex-end;
       }
+      .attachment-picker {
+        display: grid;
+        gap: 0.25rem;
+      }
+      .attachment-hint {
+        font-size: 0.76rem;
+        color: var(--text-secondary);
+      }
+      .attachment-preview {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.55rem 0.75rem;
+        border-radius: calc(var(--radius-card) * 0.75);
+        border: 1px solid var(--border-color);
+        background: var(--bg-surface-alt);
+      }
+      .attachment-thumb {
+        width: 72px;
+        height: 54px;
+        object-fit: cover;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+      }
+      .attachment-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        flex: 1;
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+      }
     `
   ]
 })
@@ -283,6 +357,9 @@ export class CasoCreateComponent implements OnInit {
   readonly errorMsg = signal<string>('');
   readonly deflexionLoading = signal<boolean>(false);
   readonly deflexion = signal<DeflexionResponse | null>(null);
+  readonly imagenAdjunta = signal<string | null>(null);
+  readonly imagenNombre = signal<string>('');
+  readonly imagenError = signal<string>('');
 
   readonly form = this.fb.nonNullable.group({
     titulo: ['', [Validators.required, Validators.minLength(5), Validators.maxLength(150)]],
@@ -334,7 +411,51 @@ export class CasoCreateComponent implements OnInit {
       { emitEvent: false }
     );
     this.deflexion.set(null);
+    this.imagenAdjunta.set(null);
+    this.imagenNombre.set('');
+    this.imagenError.set('');
     this.deflected.emit();
+  }
+
+  onImageSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    this.imagenError.set('');
+
+    if (!file) {
+      this.imagenAdjunta.set(null);
+      this.imagenNombre.set('');
+      return;
+    }
+
+    const validationError = validateImageAttachment(file);
+    if (validationError) {
+      this.imagenAdjunta.set(null);
+      this.imagenNombre.set('');
+      this.imagenError.set(validationError);
+      input.value = '';
+      return;
+    }
+
+    void readImageAsDataUrl(file)
+      .then((dataUrl) => {
+        this.imagenAdjunta.set(dataUrl);
+        this.imagenNombre.set(file.name);
+      })
+      .catch((err: unknown) => {
+        this.imagenAdjunta.set(null);
+        this.imagenNombre.set('');
+        this.imagenError.set(err instanceof Error ? err.message : 'Error al leer la imagen.');
+      });
+  }
+
+  quitarImagen(inputEl?: HTMLInputElement): void {
+    this.imagenAdjunta.set(null);
+    this.imagenNombre.set('');
+    this.imagenError.set('');
+    if (inputEl) {
+      inputEl.value = '';
+    }
   }
 
   submit(): void {
@@ -346,7 +467,11 @@ export class CasoCreateComponent implements OnInit {
     this.submitting.set(true);
     this.errorMsg.set('');
 
-    this.casosService.crearCaso(this.form.getRawValue()).subscribe({
+    const raw = this.form.getRawValue();
+    const img = this.imagenAdjunta();
+    const payload = img ? { ...raw, imagenAdjuntaBase64: img } : raw;
+
+    this.casosService.crearCaso(payload).subscribe({
       next: (detalle) => {
         this.submitting.set(false);
         this.created.emit(detalle);

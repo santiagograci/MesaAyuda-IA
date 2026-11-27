@@ -121,6 +121,19 @@ public interface ICasoService
         DeflexionRequest request,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Incrementa el contador persistente de tickets evitados mediante deflexión RAG.</summary>
+    Task<RegistrarDeflexionResponse> RegistrarDeflexionEvitadaAsync(
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Reabre un caso Resuelto o Cerrado devolviéndolo a EnProceso con trazabilidad obligatoria.</summary>
+    Task<CasoDetalleDto> ReabrirCasoAsync(
+        Guid id,
+        ReabrirCasoRequest request,
+        Guid usuarioId,
+        string rol,
+        string? nombreUsuario = null,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Registra la encuesta de satisfacción CSAT del cliente dueño en un caso resuelto o cerrado.</summary>
     Task<CasoDetalleDto> RegistrarCsatAsync(
         Guid id,

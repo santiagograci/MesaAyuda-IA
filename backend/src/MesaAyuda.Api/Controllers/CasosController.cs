@@ -368,6 +368,36 @@ public class CasosController : ControllerBase
     }
 
     /// <summary>
+    /// Registra de forma persistente una deflexión preventiva exitosa cuando el usuario evita crear el ticket.
+    /// </summary>
+    [HttpPost("deflexion/registrar")]
+    [ProducesResponseType(typeof(RegistrarDeflexionResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<RegistrarDeflexionResponse>> RegistrarDeflexionEvitada(
+        CancellationToken cancellationToken = default)
+    {
+        var resultado = await _casoService.RegistrarDeflexionEvitadaAsync(cancellationToken);
+        return Ok(resultado);
+    }
+
+    /// <summary>
+    /// Reabre un caso Resuelto o Cerrado devolviéndolo a EnProceso con trazabilidad obligatoria.
+    /// </summary>
+    [HttpPost("{id:guid}/reabrir")]
+    [ProducesResponseType(typeof(CasoDetalleDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<CasoDetalleDto>> ReabrirCaso(
+        Guid id,
+        [FromBody] ReabrirCasoRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var (usuarioId, rol, nombre) = GetCurrentUser();
+        var actualizado = await _casoService.ReabrirCasoAsync(id, request, usuarioId, rol, nombre, cancellationToken);
+        return Ok(actualizado);
+    }
+
+    /// <summary>
     /// Registra la calificación CSAT (1 a 5 estrellas) y comentario opcional del cliente propietario.
     /// </summary>
     [HttpPost("{id:guid}/csat")]

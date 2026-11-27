@@ -83,6 +83,7 @@ export interface Respuesta {
   autorNombre: string;
   fuentesCitadas: FuenteCitada[];
   fechaCreacion: string;
+  imagenAdjuntaBase64?: string | null;
 }
 
 /** Vista resumida de un caso en listados paginados. */
@@ -114,6 +115,7 @@ export interface CasoDetalle {
   estadoSla: EstadoSla;
   calificacionCsat: number | null;
   comentarioCsat: string | null;
+  imagenAdjuntaBase64?: string | null;
 }
 
 /** Resultado paginado genérico alineado con PagedResult<T> de .NET 8. */
@@ -130,6 +132,7 @@ export interface CrearCasoRequest {
   titulo: string;
   descripcion: string;
   prioridad: PrioridadCaso;
+  imagenAdjuntaBase64?: string | null;
 }
 
 /** Payload para actualizar un caso existente. */
@@ -147,6 +150,7 @@ export interface CambiarEstadoRequest {
 /** Payload para agregar una respuesta humana. */
 export interface CrearRespuestaRequest {
   texto: string;
+  imagenAdjuntaBase64?: string | null;
 }
 
 /** Payload del analista para aprobar y publicar una sugerencia IA. */
@@ -199,6 +203,17 @@ export interface MetricasMesaAyuda {
   tokensTotalesConsumidos: number;
   promedioCsat: number | null;
   totalEncuestasCsat: number;
+  totalDeflexionesEvitadas: number;
+}
+
+/** Resultado devuelto al registrar un ticket evitado mediante deflexión RAG. */
+export interface RegistrarDeflexionResponse {
+  totalDeflexionesEvitadas: number;
+}
+
+/** Payload para reabrir un caso Resuelto o Cerrado con motivo obligatorio. */
+export interface ReabrirCasoRequest {
+  motivo: string;
 }
 
 /** Solicitud de deflexión preventiva antes de crear un ticket. */

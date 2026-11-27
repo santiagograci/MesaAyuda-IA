@@ -27,7 +27,7 @@ import {
   standalone: true,
   imports: [DatePipe],
   template: `
-    <aside class="list-panel card-surface">
+    <aside class="list-panel card-surface anim-fade-up">
       <div class="list-header">
         <div class="list-title-row">
           <div>
@@ -362,10 +362,14 @@ import {
         cursor: pointer;
         display: grid;
         gap: 0.45rem;
-        transition: border-color 0.15s ease, background-color 0.15s ease;
+        transition:
+          border-color 180ms ease,
+          background-color 180ms ease,
+          transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
       }
       .case-item:hover {
         background: var(--bg-surface-alt);
+        transform: translateY(-1px);
       }
       .case-item.selected {
         border-color: var(--accent-primary);

@@ -34,7 +34,9 @@ describe('CasoDetailComponent (Borrado con cuenta regresiva y escalamiento de pr
       'eliminarCaso',
       'cambiarPrioridad',
       'sugerirRespuestaStream',
-      'registrarCsat'
+      'registrarCsat',
+      'reabrirCaso',
+      'agregarRespuesta'
     ]);
     casosServiceSpy.eliminarCaso.and.returnValue(of(void 0));
 
@@ -303,5 +305,73 @@ describe('CasoDetailComponent (Borrado con cuenta regresiva y escalamiento de pr
     expect(updatedSpy).toHaveBeenCalledWith(ratedCaso);
     expect(el.textContent).toContain('⭐ 5 / 5');
     expect(el.textContent).toContain('Excelente guía del soporte.');
+  });
+
+  it('debe renderizar Markdown limpio, permitir reabrir un caso Cerrado y abrir el lightbox de evidencia', () => {
+    const pngValido =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+    isAnalistaSignal.set(false);
+    component.caso = {
+      ...mockCaso,
+      estado: 'Cerrado',
+      estadoSla: 'Cumplido',
+      imagenAdjuntaBase64: pngValido,
+      respuestas: [
+        {
+          id: 'resp-md-1',
+          texto: 'Ejecuta **Nota Crédito NC-01** en `Facturación > Notas`.',
+          esGeneradaPorIA: true,
+          aprobadaPorAnalista: true,
+          autorNombre: 'Santiago Graciano',
+          fuentesCitadas: [],
+          fechaCreacion: '2026-11-26T16:15:00Z',
+          imagenAdjuntaBase64: pngValido
+        }
+      ]
+    };
+    fixture.detectChanges();
+
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.querySelector('.resp-body strong')?.textContent).toBe('Nota Crédito NC-01');
+    expect(el.querySelector('.resp-body code')?.textContent).toBe('Facturación > Notas');
+    expect(el.querySelector('.resp-body')?.textContent).not.toContain('**');
+
+    // Abrir y cerrar lightbox de la captura del caso
+    const caseThumb = el.querySelector('[data-testid="case-attachment-thumb"]') as HTMLButtonElement;
+    expect(caseThumb).toBeTruthy();
+    caseThumb.click();
+    fixture.detectChanges();
+    expect(el.querySelector('.lightbox-img')).toBeTruthy();
+
+    const closeLightboxBtn = el.querySelector('[data-testid="close-lightbox-btn"]') as HTMLButtonElement;
+    closeLightboxBtn.click();
+    fixture.detectChanges();
+    expect(el.querySelector('.lightbox-img')).toBeNull();
+
+    // Reabrir caso Cerrado
+    const reopenedCaso: CasoDetalle = {
+      ...mockCaso,
+      estado: 'EnProceso',
+      estadoSla: 'EnTiempo'
+    };
+    casosServiceSpy.reabrirCaso.and.returnValue(of(reopenedCaso));
+    const updatedSpy = spyOn(component.casoActualizado, 'emit');
+
+    const toggleReopenBtn = el.querySelector('[data-testid="toggle-reopen-btn"]') as HTMLButtonElement;
+    toggleReopenBtn.click();
+    fixture.detectChanges();
+
+    component.reopenForm.setValue({
+      motivo: 'El inconveniente volvió a presentarse en la emisión electrónica.'
+    });
+    const confirmReopenBtn = el.querySelector('[data-testid="confirm-reopen-btn"]') as HTMLButtonElement;
+    confirmReopenBtn.click();
+    fixture.detectChanges();
+
+    expect(casosServiceSpy.reabrirCaso).toHaveBeenCalledWith(
+      'caso-delete-1',
+      'El inconveniente volvió a presentarse en la emisión electrónica.'
+    );
+    expect(updatedSpy).toHaveBeenCalledWith(reopenedCaso);
   });
 });

@@ -568,6 +568,84 @@ public class CasosEndpointsTests : IClassFixture<CustomWebApplicationFactory>
         Assert.NotNull(metricas.PromedioCsat);
     }
 
+    [Fact]
+    public async Task DeflexionPersistente_ReaperturaControlada_YAdjuntosDeImagen_FuncionanDeExtremoAExtremo()
+    {
+        const string pngValido = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+        using var client = _factory.CreateClient();
+
+        var loginCliente = await LoginAsync(client, "cliente@empresa.com", "Ofima2026*");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", loginCliente.Token);
+
+        // 1. Registrar deflexión persistente y confirmar en /metricas
+        var regDefRes = await client.PostAsync("/api/casos/deflexion/registrar", null);
+        Assert.Equal(HttpStatusCode.OK, regDefRes.StatusCode);
+        var regDef = await regDefRes.Content.ReadFromJsonAsync<RegistrarDeflexionResponse>(JsonOptions);
+        Assert.NotNull(regDef);
+        Assert.True(regDef!.TotalDeflexionesEvitadas >= 1);
+
+        var metricasAfterDef = await (await client.GetAsync("/api/casos/metricas")).Content.ReadFromJsonAsync<MetricasMesaAyudaDto>(JsonOptions);
+        Assert.True(metricasAfterDef!.TotalDeflexionesEvitadas >= 1);
+
+        // 2. Validar rechazo 400 de adjunto no permitido y creación 201 con PNG válido
+        var invalidAttachRes = await client.PostAsJsonAsync(
+            "/api/casos",
+            new CrearCasoRequest(
+                $"Adjunto invalido {Guid.NewGuid():N}",
+                "Prueba de integración para validar rechazo de adjunto no imagen.",
+                "Media",
+                "data:text/plain;base64,aG9sYQ=="));
+        Assert.Equal(HttpStatusCode.BadRequest, invalidAttachRes.StatusCode);
+
+        var createRes = await client.PostAsJsonAsync(
+            "/api/casos",
+            new CrearCasoRequest(
+                $"Caso con captura y reapertura {Guid.NewGuid():N}",
+                "Incluye evidencia gráfica inicial del error reportado en pantalla.",
+                "Alta",
+                pngValido));
+        Assert.Equal(HttpStatusCode.Created, createRes.StatusCode);
+        var creado = await createRes.Content.ReadFromJsonAsync<CasoDetalleDto>(JsonOptions);
+        Assert.NotNull(creado);
+        Assert.Equal(pngValido, creado!.ImagenAdjuntaBase64);
+
+        // 3. Analista responde con captura PNG y cierra el caso
+        var loginAnalista = await LoginAsync(client, "analista@ofima.com", "Ofima2026*");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", loginAnalista.Token);
+
+        var replyRes = await client.PostAsJsonAsync(
+            $"/api/casos/{creado.Id}/respuestas",
+            new CrearRespuestaRequest("Evidencia de validación aplicada correctamente en el ERP.", pngValido));
+        Assert.Equal(HttpStatusCode.Created, replyRes.StatusCode);
+        var replyDto = await replyRes.Content.ReadFromJsonAsync<RespuestaDto>(JsonOptions);
+        Assert.Equal(pngValido, replyDto!.ImagenAdjuntaBase64);
+
+        Assert.Equal(HttpStatusCode.OK, (await client.PatchAsJsonAsync($"/api/casos/{creado.Id}/estado", new CambiarEstadoRequest("Resuelto"))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.PatchAsJsonAsync($"/api/casos/{creado.Id}/estado", new CambiarEstadoRequest("Cerrado"))).StatusCode);
+
+        // 4. Otro cliente recibe 403 al intentar reabrir; dueño con motivo corto recibe 400; dueño con motivo válido reabre (200)
+        var loginCliente2 = await LoginAsync(client, "cliente2@empresa.com", "Ofima2026*");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", loginCliente2.Token);
+        Assert.Equal(
+            HttpStatusCode.Forbidden,
+            (await client.PostAsJsonAsync($"/api/casos/{creado.Id}/reabrir", new ReabrirCasoRequest("Intento de tercero no dueño del ticket."))).StatusCode);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", loginCliente.Token);
+        Assert.Equal(
+            HttpStatusCode.BadRequest,
+            (await client.PostAsJsonAsync($"/api/casos/{creado.Id}/reabrir", new ReabrirCasoRequest("Corto"))).StatusCode);
+
+        var reopenRes = await client.PostAsJsonAsync(
+            $"/api/casos/{creado.Id}/reabrir",
+            new ReabrirCasoRequest("El error volvió a reproducirse tras el cierre diario."));
+        Assert.Equal(HttpStatusCode.OK, reopenRes.StatusCode);
+        var reabierto = await reopenRes.Content.ReadFromJsonAsync<CasoDetalleDto>(JsonOptions);
+        Assert.NotNull(reabierto);
+        Assert.Equal("EnProceso", reabierto!.Estado);
+        Assert.Contains(reabierto.Respuestas, r =>
+            r.Texto.Contains("🔄 [Caso Reabierto: El error volvió a reproducirse", StringComparison.Ordinal));
+    }
+
     private static async Task<LoginResponse> LoginAsync(HttpClient client, string email, string password)
     {
         var response = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, password));

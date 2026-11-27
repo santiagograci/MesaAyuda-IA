@@ -74,14 +74,16 @@ Adicionalmente, el motor RAG soporta ingesta dinámica de archivos **`.md`, `.tx
 - **Funcionalidades Base (MVP):** autenticación JWT por roles (`Cliente`/`Analista`), CRUD paginado de casos con control de propiedad, máquina de estados con invariantes (`Abierto -> EnProceso -> Resuelto -> Cerrado` impidiendo cerrar sin respuesta publicada), consulta RAG con citas verificables y flujo obligatorio de edición/aprobación del Analista antes de publicar al cliente.
 - **Capacidades de Milla Extra Implementadas:**
   - **Streaming SSE en Tiempo Real (`POST /api/casos/{id}/sugerencia/stream`):** emisión progresiva de fuentes y tokens hacia Angular sin buffering en Nginx.
-  - **Dashboard Ejecutivo Operativo y FinOps (`GET /api/casos/metricas`):** 5 tarjetas KPI con Signals (*Casos Activos*, *Severidad Crítica*, *Adopción IA*, *Consumo FinOps RAG* en tokens y *Satisfacción CSAT*).
+  - **Dashboard Ejecutivo Operativo y FinOps (`GET /api/casos/metricas`):** 6 tarjetas KPI con Signals (*Casos Activos*, *Severidad Crítica*, *Adopción IA*, *Consumo FinOps RAG* en tokens, *Satisfacción CSAT* y *Deflexión RAG* persistente con `%` de ahorro operativo).
   - **Motor de SLAs Visuales:** cálculo automático por severidad (`Critica` 2h, `Alta` 8h, `Media` 24h, `Baja` 72h) con indicadores `EnTiempo`, `PorVencer`, `Vencido` y `Cumplido`.
-  - **Deflexión Preventiva de Tickets (`POST /api/casos/deflexion`):** consulta RAG con debounce (`700 ms`) en `+ Nuevo Caso` antes de registrar el ticket.
+  - **Deflexión Preventiva Persistente (`POST /api/casos/deflexion` y `POST /api/casos/deflexion/registrar`):** consulta RAG con debounce (`700 ms`) en `+ Nuevo Caso` antes de registrar el ticket y persistencia en PostgreSQL del ahorro real cuando el usuario evita abrir el caso.
+  - **Reapertura Controlada Auditada (`POST /api/casos/{id}/reabrir`):** permite al cliente propietario o al analista reabrir casos `Resuelto` o `Cerrado` hacia `EnProceso` con motivo obligatorio (>= 10 caracteres), recálculo SLA y trazabilidad en el historial.
+  - **Evidencia Visual y Experiencia UI:** adjuntos de capturas PNG/JPG/WebP (máx. 2 MB) en creación y respuestas con vista previa y modal *lightbox*, renderizado seguro de Markdown (`SafeMarkdownPipe`) y micro-animaciones GPU con soporte `prefers-reduced-motion`.
   - **Encuesta CSAT (`POST /api/casos/{id}/csat`):** calificación de 1 a 5 estrellas y comentario opcional del cliente dueño al resolver/cerrar.
   - **Escalamiento de Prioridad Auditado (`PATCH /api/casos/{id}/prioridad`):** justificación obligatoria (>= 10 caracteres) registrada en historial.
   - **Protección contra Borrado y Papelera de Reciclaje:** soft delete (`Eliminado`/`FechaEliminacion`), confirmación con cuenta regresiva de 3s, restauración individual y restauración de casos demo.
   - **Seguridad y Productividad UI:** cierre automático por inactividad tras 10 minutos con aviso en el último minuto (`localStorage` multi-pestaña), búsqueda instantánea (`300 ms`) + filtro por prioridad y gestor en vivo de manuales RAG.
-- **Recorte Consciente de Alcance:** se excluyeron deliberadamente la omnicanalidad IMAP/WhatsApp y el SSO con Entra ID para mantener portabilidad autocontenida con `docker compose up --build` (ver detalle completo en [02-plan-estandares-riesgos-bitacora.md](docs/02-plan-estandares-riesgos-bitacora.md)).
+- **Recorte Consciente de Alcance:** se excluyeron deliberadamente la omnicanalidad IMAP/WhatsApp y el SSO con Entra ID para mantener portabilidad autocontenida con `docker compose up --build`, y se documentó la evolución futura hacia un **Agente ERP con Function Calling** (ver detalle en [02-plan-estandares-riesgos-bitacora.md](docs/02-plan-estandares-riesgos-bitacora.md)).
 
 ---
 
@@ -92,8 +94,8 @@ La evaluación automatizada sobre el corpus de 6 manuales (`86` fragmentos) y 10
 | Suite / Pipeline | Comando | Resultado Verificado | Cobertura Principal |
 | :--- | :--- | :---: | :--- |
 | **Python RAG** | `pytest -v` | **7 passed** | Chunking + metadatos, citación `FAC-402`, anclaje negativo, *prompt injection* HTTP `400`, LRU cache, `/documentos` e ingesta `.txt` |
-| **.NET 8 Backend** | `dotnet test backend/MesaAyuda.sln` | **21 passed** | **12** unitarias (dominio, SLA, prioridad, CSAT, soft-delete, deflexión) + **9** integración `WebApplicationFactory` |
-| **Angular 18 Frontend** | `npm test` (Karma/ChromeHeadless) | **18 passed** | `AuthService`, `IdleTimeoutService`, `CasosListComponent`, `CasoCreateComponent`, `CasoDetailComponent` y `KnowledgeBaseModalComponent` |
+| **.NET 8 Backend** | `dotnet test backend/MesaAyuda.sln` | **25 passed** | **15** unitarias (dominio, SLA, prioridad, CSAT, reapertura, deflexión, imágenes, soft-delete) + **10** integración `WebApplicationFactory` |
+| **Angular 18 Frontend** | `npm test` (Karma/ChromeHeadless) | **22 passed** | `AuthService`, `IdleTimeoutService`, `SafeMarkdownPipe`, `CasosListComponent`, `CasoCreateComponent`, `CasoDetailComponent` y `KnowledgeBaseModalComponent` |
 | **Evaluación RAG** | `python -m evaluation.evaluate` | **100% (10/10)** | Hit Rate @ 4 (`100%`), Faithfulness (`100%`), Out-of-Domain Rejection (`100%`), latencia media `13.75 ms` |
 
 El workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) ejecuta los 3 pipelines en paralelo ante cada `push` y `pull_request` sobre `main`.

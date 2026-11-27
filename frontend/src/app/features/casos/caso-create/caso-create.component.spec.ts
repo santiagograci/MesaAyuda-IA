@@ -66,4 +66,31 @@ describe('CasoCreateComponent (Deflexión preventiva RAG)', () => {
     expect(casosServiceSpy.consultarDeflexion).toHaveBeenCalledTimes(1);
     expect(casosServiceSpy.crearCaso).not.toHaveBeenCalled();
   }));
+
+  it('debe rechazar archivos no imagen o mayores a 2 MB al adjuntar captura', () => {
+    const el: HTMLElement = fixture.nativeElement;
+    const input = el.querySelector('[data-testid="create-image-input"]') as HTMLInputElement;
+
+    const badFile = new File(['hola'], 'documento.pdf', { type: 'application/pdf' });
+    const dtBad = new DataTransfer();
+    dtBad.items.add(badFile);
+    Object.defineProperty(input, 'files', { value: dtBad.files, configurable: true });
+    input.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    expect(el.querySelector('[data-testid="create-image-error"]')?.textContent).toContain(
+      'PNG, JPG o WebP'
+    );
+
+    const oversized = new File([new Uint8Array(2 * 1024 * 1024 + 5)], 'grande.png', {
+      type: 'image/png'
+    });
+    const dtBig = new DataTransfer();
+    dtBig.items.add(oversized);
+    Object.defineProperty(input, 'files', { value: dtBig.files, configurable: true });
+    input.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    expect(el.querySelector('[data-testid="create-image-error"]')?.textContent).toContain('2 MB');
+  });
 });

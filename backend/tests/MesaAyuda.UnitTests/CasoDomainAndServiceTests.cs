@@ -352,6 +352,132 @@ public class CasoDomainAndServiceTests
         Assert.Equal(5.0, metricas.PromedioCsat);
     }
 
+    [Fact]
+    public async Task ReabrirCaso_DesdeResueltoOCerrado_TransicionaAEnProcesoRecalculaSlaYRegistraAuditoria()
+    {
+        var cliente = new Usuario("Carlos Mendoza", "cliente@empresa.com", "hash", RolUsuario.Cliente);
+        var otroClienteId = Guid.NewGuid();
+        var caso = new Caso(
+            "Error CON-301 en cierre contable",
+            "El módulo contable detiene el cierre de mes por cuenta puente.",
+            PrioridadCaso.Critica,
+            cliente.Id);
+
+        caso.AgregarRespuestaHumana("Se concilió la cuenta puente 999905.", "Santiago Graciano");
+        caso.CambiarEstado(EstadoCaso.Resuelto);
+        caso.CambiarEstado(EstadoCaso.Cerrado);
+
+        // Invariante original de CambiarEstado sobre Cerrado debe mantenerse intacta
+        Assert.Throws<DomainException>(() => caso.CambiarEstado(EstadoCaso.EnProceso));
+
+        var repo = new FakeCasoRepository(new[] { caso });
+        var userRepo = new FakeUsuarioRepository(new[] { cliente });
+        var uow = new FakeUnitOfWork();
+        var service = BuildCasoService(repo, userRepo, uow, new StubRagServiceClient());
+
+        // Otro cliente no autorizado -> UnauthorizedAccessException
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            service.ReabrirCasoAsync(
+                caso.Id,
+                new ReabrirCasoRequest("Intento no autorizado de reapertura."),
+                otroClienteId,
+                "Cliente"));
+
+        // Motivo menor a 10 caracteres -> DomainException
+        await Assert.ThrowsAsync<DomainException>(() =>
+            service.ReabrirCasoAsync(
+                caso.Id,
+                new ReabrirCasoRequest("Muy corto"),
+                cliente.Id,
+                "Cliente"));
+
+        // Dueño reabre el caso Cerrado -> retorna a EnProceso con auditoría
+        var reabierto = await service.ReabrirCasoAsync(
+            caso.Id,
+            new ReabrirCasoRequest("El error CON-301 volvió a aparecer al ejecutar el cierre definitivo."),
+            cliente.Id,
+            "Cliente",
+            cliente.Nombre);
+
+        Assert.Equal("EnProceso", reabierto.Estado);
+        Assert.NotEqual("Cumplido", reabierto.EstadoSla);
+        Assert.Contains(reabierto.Respuestas, r =>
+            r.Texto.Contains("🔄 [Caso Reabierto: El error CON-301 volvió a aparecer", StringComparison.Ordinal));
+        Assert.Equal(1, uow.SaveChangesCount);
+
+        // También permite reabrir desde Resuelto
+        caso.CambiarEstado(EstadoCaso.Resuelto);
+        var reabiertoDesdeResuelto = await service.ReabrirCasoAsync(
+            caso.Id,
+            new ReabrirCasoRequest("Pendiente validar un comprobante adicional de tesorería."),
+            Guid.NewGuid(),
+            "Analista",
+            "Santiago Graciano");
+        Assert.Equal("EnProceso", reabiertoDesdeResuelto.Estado);
+    }
+
+    [Fact]
+    public async Task RegistrarDeflexionEvitada_PersisteEnRepositorioYSeReflejaEnMetricas()
+    {
+        var repo = new FakeCasoRepository();
+        var uow = new FakeUnitOfWork();
+        var service = BuildCasoService(repo, new FakeUsuarioRepository(), uow, new StubRagServiceClient());
+
+        var res1 = await service.RegistrarDeflexionEvitadaAsync();
+        var res2 = await service.RegistrarDeflexionEvitadaAsync();
+
+        Assert.Equal(1, res1.TotalDeflexionesEvitadas);
+        Assert.Equal(2, res2.TotalDeflexionesEvitadas);
+
+        var metricas = await service.ObtenerMetricasAsync(Guid.NewGuid(), "Analista");
+        Assert.Equal(2, metricas.TotalDeflexionesEvitadas);
+        Assert.Equal(2, uow.SaveChangesCount);
+    }
+
+    [Fact]
+    public async Task ImagenAdjunta_EnCasoYRespuesta_ValidaFormatoYTamanoMax2MB()
+    {
+        const string pngValido = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+        var cliente = new Usuario("Carlos Mendoza", "cliente@empresa.com", "hash", RolUsuario.Cliente);
+        var repo = new FakeCasoRepository();
+        var userRepo = new FakeUsuarioRepository(new[] { cliente });
+        var uow = new FakeUnitOfWork();
+        var service = BuildCasoService(repo, userRepo, uow, new StubRagServiceClient());
+
+        var creado = await service.CrearCasoAsync(
+            new CrearCasoRequest(
+                "Error FAC-402 con captura adjunta",
+                "Adjuntamos evidencia de pantalla del error FAC-402 en módulo de facturación.",
+                "Alta",
+                pngValido),
+            cliente.Id);
+
+        Assert.Equal(pngValido, creado.ImagenAdjuntaBase64);
+
+        var resp = await service.AgregarRespuestaHumanaAsync(
+            creado.Id,
+            new CrearRespuestaRequest("Adjunto captura del paso a paso en Nota Crédito NC-01.", pngValido),
+            Guid.NewGuid(),
+            "Santiago Graciano",
+            "Analista");
+
+        Assert.Equal(pngValido, resp.ImagenAdjuntaBase64);
+
+        // Rechaza MIME no permitido y tamaño > 2 MB
+        await Assert.ThrowsAsync<FluentValidation.ValidationException>(() =>
+            service.CrearCasoAsync(
+                new CrearCasoRequest(
+                    "Caso con archivo inválido",
+                    "Descripción válida de prueba para rechazar archivo adjunto inválido.",
+                    "Media",
+                    "data:application/pdf;base64,JVBERi0xLjQ="),
+                cliente.Id));
+
+        var demasiadoGrande = "data:image/png;base64," + Convert.ToBase64String(new byte[(2 * 1024 * 1024) + 10]);
+        Assert.Throws<DomainException>(() =>
+            new Caso("Caso excedido", "Descripción suficientemente extensa para el caso.", PrioridadCaso.Baja, cliente.Id, demasiadoGrande));
+    }
+
     private static CasoService BuildCasoService(
         FakeCasoRepository casoRepo,
         FakeUsuarioRepository usuarioRepo,
@@ -372,6 +498,7 @@ public class CasoDomainAndServiceTests
     private sealed class FakeCasoRepository : ICasoRepository
     {
         private readonly List<Caso> _casos;
+        private int _deflexiones;
 
         public FakeCasoRepository(IEnumerable<Caso>? initial = null)
         {
@@ -436,6 +563,15 @@ public class CasoDomainAndServiceTests
             Task.CompletedTask;
 
         public void Remove(Caso caso) => _casos.Remove(caso);
+
+        public Task<int> IncrementarDeflexionAsync(CancellationToken cancellationToken = default)
+        {
+            _deflexiones++;
+            return Task.FromResult(_deflexiones);
+        }
+
+        public Task<int> ObtenerDeflexionesAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(_deflexiones);
     }
 
     private sealed class FakeUsuarioRepository : IUsuarioRepository

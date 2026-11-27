@@ -19,7 +19,9 @@ import {
   PagedResult,
   PrioridadCaso,
   RagStreamEvent,
+  ReabrirCasoRequest,
   RegistrarCsatRequest,
+  RegistrarDeflexionResponse,
   Respuesta,
   RestaurarDemoResponse
 } from '../models/api.models';
@@ -113,8 +115,14 @@ export class CasosService {
   }
 
   /** Agrega una respuesta humana publicada al historial del caso. */
-  agregarRespuesta(id: string, texto: string): Observable<Respuesta> {
-    const body: CrearRespuestaRequest = { texto };
+  agregarRespuesta(
+    id: string,
+    texto: string,
+    imagenAdjuntaBase64?: string | null
+  ): Observable<Respuesta> {
+    const body: CrearRespuestaRequest = imagenAdjuntaBase64
+      ? { texto, imagenAdjuntaBase64 }
+      : { texto };
     return this.http.post<Respuesta>(`${this.baseUrl}/${id}/respuestas`, body);
   }
 
@@ -132,6 +140,17 @@ export class CasosService {
   consultarDeflexion(titulo: string, descripcion: string): Observable<DeflexionResponse> {
     const body: DeflexionRequest = { titulo, descripcion };
     return this.http.post<DeflexionResponse>(`${this.baseUrl}/deflexion`, body);
+  }
+
+  /** Registra en base de datos un caso evitado mediante deflexión preventiva RAG. */
+  registrarDeflexionEvitada(): Observable<RegistrarDeflexionResponse> {
+    return this.http.post<RegistrarDeflexionResponse>(`${this.baseUrl}/deflexion/registrar`, {});
+  }
+
+  /** Reabre un caso Resuelto o Cerrado devolviéndolo a EnProceso con trazabilidad obligatoria. */
+  reabrirCaso(id: string, motivo: string): Observable<CasoDetalle> {
+    const body: ReabrirCasoRequest = { motivo };
+    return this.http.post<CasoDetalle>(`${this.baseUrl}/${id}/reabrir`, body);
   }
 
   /** Registra calificación CSAT (1-5 estrellas) del cliente propietario del caso. */

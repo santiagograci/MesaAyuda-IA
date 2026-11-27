@@ -39,7 +39,7 @@ const FALLBACK_DEMO_USERS: DemoUser[] = [
         <app-theme-customizer />
       </div>
 
-      <main class="login-card card-surface">
+      <main class="login-card card-surface anim-fade-up">
         <header class="login-header">
           <app-ofima-logo variant="full" />
           <p>Ingresa con tus credenciales o usa un acceso rápido de demostración.</p>

@@ -149,7 +149,12 @@ public class CasoService : ICasoService
             ?? throw new KeyNotFoundException($"No se encontró el usuario cliente '{clienteId}'.");
 
         var prioridad = Enum.Parse<PrioridadCaso>(request.Prioridad.Trim(), ignoreCase: true);
-        var caso = new Caso(request.Titulo, request.Descripcion, prioridad, clienteId);
+        var caso = new Caso(
+            request.Titulo,
+            request.Descripcion,
+            prioridad,
+            clienteId,
+            request.ImagenAdjuntaBase64);
 
         await _casoRepository.AddAsync(caso, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -342,7 +347,10 @@ public class CasoService : ICasoService
         var caso = await GetCasoOrThrowAsync(id, cancellationToken);
         EnsureOwnershipOrAnalyst(caso, usuarioId, rol);
 
-        var respuesta = caso.AgregarRespuestaHumana(request.Texto, nombreUsuario);
+        var respuesta = caso.AgregarRespuestaHumana(
+            request.Texto,
+            nombreUsuario,
+            request.ImagenAdjuntaBase64);
         await _casoRepository.AddRespuestaAsync(respuesta, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -450,6 +458,8 @@ public class CasoService : ICasoService
             ? null
             : Math.Round(calificados.Average(c => c.CalificacionCsat!.Value), 1);
 
+        var totalDeflexionesEvitadas = await _casoRepository.ObtenerDeflexionesAsync(cancellationToken);
+
         return new MetricasMesaAyudaDto(
             TotalCasos: totalCasos,
             CasosAbiertos: abiertos,
@@ -462,7 +472,8 @@ public class CasoService : ICasoService
             TasaAdopcionIaPorcentaje: tasaAdopcion,
             TokensTotalesConsumidos: tokensTotales,
             PromedioCsat: promedioCsat,
-            TotalEncuestasCsat: totalCsat);
+            TotalEncuestasCsat: totalCsat,
+            TotalDeflexionesEvitadas: totalDeflexionesEvitadas);
     }
 
     /// <inheritdoc />
@@ -481,6 +492,43 @@ public class CasoService : ICasoService
             return new DeflexionResponse(false, string.Empty, new List<FuenteCitadaDto>());
 
         return new DeflexionResponse(true, ragResponse.Respuesta, fuentes);
+    }
+
+    /// <inheritdoc />
+    public async Task<RegistrarDeflexionResponse> RegistrarDeflexionEvitadaAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var total = await _casoRepository.IncrementarDeflexionAsync(cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return new RegistrarDeflexionResponse(total);
+    }
+
+    /// <inheritdoc />
+    public async Task<CasoDetalleDto> ReabrirCasoAsync(
+        Guid id,
+        ReabrirCasoRequest request,
+        Guid usuarioId,
+        string rol,
+        string? nombreUsuario = null,
+        CancellationToken cancellationToken = default)
+    {
+        var motivo = request.Motivo?.Trim() ?? string.Empty;
+        if (motivo.Length < 10)
+            throw new DomainException("El motivo de reapertura debe tener al menos 10 caracteres.");
+
+        var caso = await GetCasoOrThrowAsync(id, cancellationToken);
+        EnsureOwnershipOrAnalyst(caso, usuarioId, rol);
+
+        var autorNombre = !string.IsNullOrWhiteSpace(nombreUsuario)
+            ? nombreUsuario.Trim()
+            : (await _usuarioRepository.GetByIdAsync(usuarioId, cancellationToken))?.Nombre ?? rol;
+
+        var auditoria = caso.ReabrirCaso(motivo, autorNombre);
+        await _casoRepository.AddRespuestaAsync(auditoria, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        var esAnalista = string.Equals(rol, nameof(RolUsuario.Analista), StringComparison.OrdinalIgnoreCase);
+        return MapToDetalleDto(caso, soloPublicadas: !esAnalista);
     }
 
     /// <inheritdoc />
@@ -558,7 +606,8 @@ public class CasoService : ICasoService
             FechaLimiteSla: caso.CalcularFechaLimiteSla(),
             EstadoSla: caso.EvaluarEstadoSla(),
             CalificacionCsat: caso.CalificacionCsat,
-            ComentarioCsat: caso.ComentarioCsat);
+            ComentarioCsat: caso.ComentarioCsat,
+            ImagenAdjuntaBase64: caso.ImagenAdjuntaBase64);
     }
 
     private static RespuestaDto MapToRespuestaDto(Respuesta respuesta)
@@ -581,6 +630,7 @@ public class CasoService : ICasoService
             AprobadaPorAnalista: respuesta.AprobadaPorAnalista,
             AutorNombre: respuesta.AutorNombre,
             FuentesCitadas: fuentes,
-            FechaCreacion: respuesta.FechaCreacion);
+            FechaCreacion: respuesta.FechaCreacion,
+            ImagenAdjuntaBase64: respuesta.ImagenAdjuntaBase64);
     }
 }

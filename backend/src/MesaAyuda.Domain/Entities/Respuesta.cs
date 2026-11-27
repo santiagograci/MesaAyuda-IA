@@ -1,3 +1,4 @@
+using MesaAyuda.Domain.Common;
 using MesaAyuda.Domain.Exceptions;
 
 namespace MesaAyuda.Domain.Entities;
@@ -34,6 +35,9 @@ public class Respuesta
     /// <summary>Fecha de registro de la respuesta en formato UTC.</summary>
     public DateTime FechaCreacion { get; private set; }
 
+    /// <summary>Captura de pantalla opcional adjunta en formato Data URL Base64.</summary>
+    public string? ImagenAdjuntaBase64 { get; private set; }
+
     private Respuesta()
     {
     }
@@ -48,7 +52,8 @@ public class Respuesta
         bool aprobadaPorAnalista,
         string autorNombre,
         string fuentesCitadasJson = "[]",
-        int tokensUsados = 0)
+        int tokensUsados = 0,
+        string? imagenAdjuntaBase64 = null)
     {
         if (casoId == Guid.Empty)
             throw new DomainException("El identificador del caso es obligatorio para registrar una respuesta.");
@@ -66,6 +71,7 @@ public class Respuesta
         FuentesCitadasJson = string.IsNullOrWhiteSpace(fuentesCitadasJson) ? "[]" : fuentesCitadasJson.Trim();
         TokensUsados = Math.Max(0, tokensUsados);
         FechaCreacion = DateTime.UtcNow;
+        ImagenAdjuntaBase64 = ImageAttachmentPolicy.NormalizeAndValidate(imagenAdjuntaBase64);
     }
 
     /// <summary>

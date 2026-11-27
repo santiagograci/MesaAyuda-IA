@@ -159,4 +159,37 @@ public class CasoRepository : ICasoRepository
     {
         _dbContext.Casos.Remove(caso);
     }
+
+    /// <summary>
+    /// Incrementa el contador persistente de deflexiones evitadas en base de datos.
+    /// </summary>
+    public async Task<int> IncrementarDeflexionAsync(CancellationToken cancellationToken = default)
+    {
+        var metrica = await _dbContext.MetricasSistema
+            .FirstOrDefaultAsync(m => m.Clave == MetricaSistema.ClaveDeflexionesEvitadas, cancellationToken);
+
+        if (metrica is null)
+        {
+            metrica = new MetricaSistema(MetricaSistema.ClaveDeflexionesEvitadas, 1);
+            await _dbContext.MetricasSistema.AddAsync(metrica, cancellationToken);
+        }
+        else
+        {
+            metrica.Incrementar();
+        }
+
+        return metrica.Valor;
+    }
+
+    /// <summary>
+    /// Consulta el total histórico de deflexiones evitadas registrado en base de datos.
+    /// </summary>
+    public async Task<int> ObtenerDeflexionesAsync(CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.MetricasSistema
+            .AsNoTracking()
+            .Where(m => m.Clave == MetricaSistema.ClaveDeflexionesEvitadas)
+            .Select(m => m.Valor)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
 }

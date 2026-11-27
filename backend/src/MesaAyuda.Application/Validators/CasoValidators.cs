@@ -1,5 +1,6 @@
 using FluentValidation;
 using MesaAyuda.Application.DTOs;
+using MesaAyuda.Domain.Common;
 using MesaAyuda.Domain.Enums;
 
 namespace MesaAyuda.Application.Validators;
@@ -23,6 +24,10 @@ public class CrearCasoRequestValidator : AbstractValidator<CrearCasoRequest>
             .NotEmpty().WithMessage("La prioridad es obligatoria.")
             .Must(BeValidPriority)
             .WithMessage("La prioridad debe ser Baja, Media, Alta o Critica.");
+
+        RuleFor(x => x.ImagenAdjuntaBase64)
+            .Must(ImageAttachmentPolicy.IsValidOrEmpty)
+            .WithMessage("La imagen adjunta debe ser PNG, JPG o WebP válida y no superar los 2 MB.");
     }
 
     private static bool BeValidPriority(string prioridad) =>
@@ -66,6 +71,10 @@ public class CrearRespuestaRequestValidator : AbstractValidator<CrearRespuestaRe
         RuleFor(x => x.Texto)
             .NotEmpty().WithMessage("El texto de la respuesta es obligatorio.")
             .Length(5, 4000).WithMessage("La respuesta debe tener entre 5 y 4000 caracteres.");
+
+        RuleFor(x => x.ImagenAdjuntaBase64)
+            .Must(ImageAttachmentPolicy.IsValidOrEmpty)
+            .WithMessage("La imagen adjunta debe ser PNG, JPG o WebP válida y no superar los 2 MB.");
     }
 }
 

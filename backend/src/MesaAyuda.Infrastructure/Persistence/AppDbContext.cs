@@ -17,6 +17,9 @@ public class AppDbContext : DbContext
     /// <summary>Conjunto de respuestas humanas y sugerencias IA asociadas a casos.</summary>
     public DbSet<Respuesta> Respuestas => Set<Respuesta>();
 
+    /// <summary>Contadores globales persistentes del sistema (p. ej. deflexiones RAG evitadas).</summary>
+    public DbSet<MetricaSistema> MetricasSistema => Set<MetricaSistema>();
+
     /// <summary>
     /// Inicializa el contexto con las opciones configuradas por inyección de dependencias.
     /// </summary>
@@ -99,6 +102,9 @@ public class AppDbContext : DbContext
 
             builder.Property(c => c.FechaEliminacion);
 
+            builder.Property(c => c.ImagenAdjuntaBase64)
+                .HasColumnType("text");
+
             builder.HasOne(c => c.Cliente)
                 .WithMany()
                 .HasForeignKey(c => c.ClienteId)
@@ -147,7 +153,27 @@ public class AppDbContext : DbContext
             builder.Property(r => r.FechaCreacion)
                 .IsRequired();
 
+            builder.Property(r => r.ImagenAdjuntaBase64)
+                .HasColumnType("text");
+
             builder.HasIndex(r => r.CasoId);
+        });
+
+        modelBuilder.Entity<MetricaSistema>(builder =>
+        {
+            builder.ToTable("metricas_sistema");
+            builder.HasKey(m => m.Clave);
+
+            builder.Property(m => m.Clave)
+                .IsRequired()
+                .HasMaxLength(80);
+
+            builder.Property(m => m.Valor)
+                .IsRequired()
+                .HasDefaultValue(0);
+
+            builder.Property(m => m.FechaActualizacion)
+                .IsRequired();
         });
     }
 }

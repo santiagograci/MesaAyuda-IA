@@ -22,7 +22,8 @@ public record RespuestaDto(
     bool AprobadaPorAnalista,
     string AutorNombre,
     List<FuenteCitadaDto> FuentesCitadas,
-    DateTime FechaCreacion);
+    DateTime FechaCreacion,
+    string? ImagenAdjuntaBase64 = null);
 
 /// <summary>
 /// Vista resumida de un caso para listados paginados.
@@ -55,12 +56,17 @@ public record CasoDetalleDto(
     DateTime FechaLimiteSla,
     string EstadoSla,
     int? CalificacionCsat,
-    string? ComentarioCsat);
+    string? ComentarioCsat,
+    string? ImagenAdjuntaBase64 = null);
 
 /// <summary>
 /// Solicitud para crear un nuevo caso de soporte técnico.
 /// </summary>
-public record CrearCasoRequest(string Titulo, string Descripcion, string Prioridad);
+public record CrearCasoRequest(
+    string Titulo,
+    string Descripcion,
+    string Prioridad,
+    string? ImagenAdjuntaBase64 = null);
 
 /// <summary>
 /// Solicitud para actualizar título, descripción y prioridad de un caso abierto o en proceso.
@@ -75,7 +81,7 @@ public record CambiarEstadoRequest(string NuevoEstado);
 /// <summary>
 /// Solicitud para registrar una respuesta humana publicada en un caso.
 /// </summary>
-public record CrearRespuestaRequest(string Texto);
+public record CrearRespuestaRequest(string Texto, string? ImagenAdjuntaBase64 = null);
 
 /// <summary>
 /// Solicitud del analista para aprobar y/o editar una sugerencia generada por IA.
@@ -132,7 +138,8 @@ public record MetricasMesaAyudaDto(
     double TasaAdopcionIaPorcentaje,
     int TokensTotalesConsumidos,
     double? PromedioCsat,
-    int TotalEncuestasCsat);
+    int TotalEncuestasCsat,
+    int TotalDeflexionesEvitadas = 0);
 
 /// <summary>
 /// Solicitud de deflexión preventiva antes de crear un ticket en base de datos.
@@ -146,6 +153,19 @@ public record DeflexionResponse(
     bool TieneSugerencia,
     string RespuestaSugerida,
     List<FuenteCitadaDto> Fuentes);
+
+/// <summary>
+/// Resultado devuelto al registrar un caso evitado mediante deflexión preventiva RAG.
+/// </summary>
+public record RegistrarDeflexionResponse(int TotalDeflexionesEvitadas);
+
+/// <summary>
+/// Solicitud para reabrir un caso Resuelto o Cerrado con motivo obligatorio.
+/// </summary>
+public record ReabrirCasoRequest(
+    [Required(ErrorMessage = "El motivo de reapertura es obligatorio.")]
+    [MinLength(10, ErrorMessage = "El motivo de reapertura debe tener al menos 10 caracteres.")]
+    string Motivo);
 
 /// <summary>
 /// Encuesta de satisfacción CSAT enviada por el cliente al resolver o cerrar su caso.

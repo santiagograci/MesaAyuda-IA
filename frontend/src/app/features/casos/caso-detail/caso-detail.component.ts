@@ -3,6 +3,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import {
   Component,
   EventEmitter,
+  HostListener,
   Input,
   OnDestroy,
   Output,
@@ -25,6 +26,11 @@ import {
 } from '../../../core/models/api.models';
 import { AuthService } from '../../../core/services/auth.service';
 import { CasosService } from '../../../core/services/casos.service';
+import { SafeMarkdownPipe } from '../../../shared/pipes/safe-markdown.pipe';
+import {
+  readImageAsDataUrl,
+  validateImageAttachment
+} from '../../../shared/utils/image-attachment.util';
 
 const PRIORIDAD_RANK: Record<PrioridadCaso, number> = {
   Baja: 1,
@@ -40,10 +46,10 @@ const PRIORIDAD_RANK: Record<PrioridadCaso, number> = {
 @Component({
   selector: 'app-caso-detail',
   standalone: true,
-  imports: [ReactiveFormsModule, DatePipe, DecimalPipe],
+  imports: [ReactiveFormsModule, DatePipe, DecimalPipe, SafeMarkdownPipe],
   template: `
     @if (casoSignal(); as c) {
-      <section class="detail-card card-surface">
+      <section class="detail-card card-surface anim-fade-up">
         <header class="detail-header">
           <div class="title-block">
             <div class="badges-row">
@@ -118,7 +124,7 @@ const PRIORIDAD_RANK: Record<PrioridadCaso, number> = {
           <form
             [formGroup]="priorityForm"
             (ngSubmit)="confirmarCambioPrioridad()"
-            class="priority-panel"
+            class="priority-panel anim-fade-up"
             role="region"
             aria-label="Cambio de prioridad"
           >
@@ -191,7 +197,7 @@ const PRIORIDAD_RANK: Record<PrioridadCaso, number> = {
         }
 
         @if (deleteConfirmOpen()) {
-          <div class="delete-confirm-banner" role="alertdialog" aria-label="Confirmar eliminación lógica">
+          <div class="delete-confirm-banner anim-fade-up" role="alertdialog" aria-label="Confirmar eliminación lógica">
             <p class="delete-confirm-text">
               ⚠️ ¿Estás seguro de eliminar este caso? Pasará a la papelera de reciclaje.
             </p>
@@ -223,6 +229,20 @@ const PRIORIDAD_RANK: Record<PrioridadCaso, number> = {
 
         <div class="description-box">
           <p>{{ c.descripcion }}</p>
+          @if (c.imagenAdjuntaBase64; as caseImg) {
+            <div class="attached-evidence">
+              <button
+                type="button"
+                class="thumb-btn"
+                data-testid="case-attachment-thumb"
+                aria-label="Ampliar captura adjunta del caso"
+                (click)="abrirLightbox(caseImg)"
+              >
+                <img [src]="caseImg" alt="Captura adjunta al caso" class="evidence-thumb" />
+                <span class="thumb-caption">🔍 Ver evidencia adjunta</span>
+              </button>
+            </div>
+          }
         </div>
 
         @if (errorMsg()) {
@@ -246,11 +266,83 @@ const PRIORIDAD_RANK: Record<PrioridadCaso, number> = {
                 Pasar a {{ formatEstado(nextState) }}
               </button>
             }
+            @if (c.estado === 'Resuelto') {
+              <button
+                type="button"
+                class="btn btn-soft btn-sm"
+                data-testid="toggle-reopen-btn"
+                [disabled]="busy()"
+                (click)="abrirPanelReapertura()"
+              >
+                🔄 Reabrir Caso
+              </button>
+            }
           </div>
         } @else {
           <div class="closed-banner">
-            Este caso se encuentra <strong>Cerrado</strong> de forma definitiva y no admite cambios ni nuevas respuestas.
+            <span>
+              Este caso se encuentra <strong>Cerrado</strong>. Si el incidente reaparece, puedes reabrirlo documentando el motivo.
+            </span>
+            <button
+              type="button"
+              class="btn btn-soft btn-sm"
+              data-testid="toggle-reopen-btn"
+              [disabled]="busy()"
+              (click)="abrirPanelReapertura()"
+            >
+              🔄 Reabrir Caso
+            </button>
           </div>
+        }
+
+        @if (reopenPanelOpen()) {
+          <form
+            [formGroup]="reopenForm"
+            (ngSubmit)="confirmarReapertura()"
+            class="priority-panel anim-fade-up"
+            role="region"
+            aria-label="Reapertura de caso"
+          >
+            <div class="priority-panel-head">
+              <strong>🔄 Reabrir caso y devolver a En Proceso</strong>
+              <span class="meta-text">Se recalculará el SLA y quedará trazado en el historial.</span>
+            </div>
+
+            <div class="priority-field">
+              <label for="motivoReapertura">Motivo de reapertura (mín. 10 caracteres)</label>
+              <textarea
+                id="motivoReapertura"
+                rows="3"
+                class="form-control"
+                formControlName="motivo"
+                placeholder="Explica por qué el incidente requiere reapertura y seguimiento adicional..."
+              ></textarea>
+              @if (reopenForm.controls.motivo.touched && reopenForm.controls.motivo.invalid) {
+                <small class="field-error">
+                  El motivo de reapertura es obligatorio y debe tener al menos 10 caracteres.
+                </small>
+              }
+            </div>
+
+            <div class="priority-panel-actions">
+              <button
+                type="submit"
+                class="btn btn-primary btn-sm"
+                data-testid="confirm-reopen-btn"
+                [disabled]="busy()"
+              >
+                Confirmar reapertura
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm"
+                [disabled]="busy()"
+                (click)="cerrarPanelReapertura()"
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
         }
 
         @if (generatingIa() && authService.isAnalista()) {
@@ -381,7 +473,22 @@ const PRIORIDAD_RANK: Record<PrioridadCaso, number> = {
                   <span class="meta-text">{{ resp.fechaCreacion | date: 'dd/MM/yyyy HH:mm' }}</span>
                 </div>
 
-                <p class="resp-body">{{ resp.texto }}</p>
+                <div class="resp-body md-content" [innerHTML]="resp.texto | safeMarkdown"></div>
+
+                @if (resp.imagenAdjuntaBase64; as respImg) {
+                  <div class="attached-evidence">
+                    <button
+                      type="button"
+                      class="thumb-btn"
+                      data-testid="reply-attachment-thumb"
+                      aria-label="Ampliar captura adjunta de la respuesta"
+                      (click)="abrirLightbox(respImg)"
+                    >
+                      <img [src]="respImg" alt="Captura adjunta a la respuesta" class="evidence-thumb" />
+                      <span class="thumb-caption">🔍 Ver captura adjunta</span>
+                    </button>
+                  </div>
+                }
 
                 @if (resp.fuentesCitadas.length > 0) {
                   <div class="citations-box">
@@ -471,6 +578,38 @@ const PRIORIDAD_RANK: Record<PrioridadCaso, number> = {
             @if (replyForm.controls.texto.touched && replyForm.controls.texto.invalid) {
               <small class="field-error">La respuesta debe tener entre 5 y 4000 caracteres.</small>
             }
+            <div class="reply-attachment-row">
+              <label for="replyImageInput" class="attachment-label">📎 Adjuntar captura (PNG/JPG)</label>
+              <input
+                #replyImageFileInput
+                id="replyImageInput"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                class="form-control"
+                data-testid="reply-image-input"
+                [disabled]="busy()"
+                (change)="onReplyImageSelected($event)"
+              />
+              @if (replyImageError()) {
+                <small class="field-error" data-testid="reply-image-error">{{ replyImageError() }}</small>
+              }
+              @if (replyImageBase64(); as replyPreview) {
+                <div class="attachment-preview">
+                  <img [src]="replyPreview" alt="Vista previa adjunto respuesta" class="evidence-thumb" />
+                  <div class="attachment-meta">
+                    <span>{{ replyImageName() || 'Captura adjunta' }}</span>
+                    <button
+                      type="button"
+                      class="btn btn-sm"
+                      data-testid="remove-reply-image-btn"
+                      (click)="quitarReplyImage(replyImageFileInput)"
+                    >
+                      ✕ Quitar
+                    </button>
+                  </div>
+                </div>
+              }
+            </div>
             <div class="reply-actions">
               <button type="submit" class="btn btn-primary" [disabled]="busy()">
                 Enviar Respuesta
@@ -479,6 +618,32 @@ const PRIORIDAD_RANK: Record<PrioridadCaso, number> = {
           </form>
         }
       </section>
+
+      @if (lightboxImageUrl(); as imgUrl) {
+        <div
+          class="lightbox-backdrop anim-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Vista ampliada de evidencia"
+          (click)="cerrarLightbox()"
+        >
+          <div class="lightbox-card card-surface anim-modal" (click)="$event.stopPropagation()">
+            <div class="lightbox-head">
+              <strong>Evidencia visual adjunta</strong>
+              <button
+                type="button"
+                class="btn btn-sm"
+                data-testid="close-lightbox-btn"
+                aria-label="Cerrar imagen"
+                (click)="cerrarLightbox()"
+              >
+                ✕ Cerrar
+              </button>
+            </div>
+            <img [src]="imgUrl" alt="Evidencia visual ampliada" class="lightbox-img" />
+          </div>
+        </div>
+      }
     }
   `,
   styles: [
@@ -544,6 +709,11 @@ const PRIORIDAD_RANK: Record<PrioridadCaso, number> = {
         border: 1px dashed var(--border-color);
       }
       .closed-banner {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.75rem;
         padding: 0.75rem 1rem;
         border-radius: calc(var(--radius-card) * 0.8);
         background: var(--bg-surface-alt);
@@ -821,6 +991,94 @@ const PRIORIDAD_RANK: Record<PrioridadCaso, number> = {
         display: flex;
         justify-content: flex-end;
       }
+      .attached-evidence {
+        margin-top: 0.65rem;
+      }
+      .thumb-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.55rem;
+        padding: 0.35rem 0.6rem 0.35rem 0.35rem;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        background: var(--bg-surface);
+        color: var(--accent-text);
+        cursor: pointer;
+        font-size: 0.78rem;
+        font-weight: 600;
+        transition: border-color 180ms ease, transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .thumb-btn:hover {
+        border-color: var(--accent-primary);
+        transform: translateY(-1px);
+      }
+      .evidence-thumb {
+        width: 68px;
+        height: 48px;
+        object-fit: cover;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+      }
+      .thumb-caption {
+        white-space: nowrap;
+      }
+      .reply-attachment-row {
+        display: grid;
+        gap: 0.35rem;
+      }
+      .attachment-label {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: var(--text-secondary);
+      }
+      .attachment-preview {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.5rem 0.7rem;
+        border-radius: calc(var(--radius-card) * 0.75);
+        border: 1px solid var(--border-color);
+        background: var(--bg-surface-alt);
+      }
+      .attachment-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        flex: 1;
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+      }
+      .lightbox-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 9600;
+        background: rgba(15, 23, 42, 0.72);
+        backdrop-filter: blur(2px);
+        display: grid;
+        place-items: center;
+        padding: 1.25rem;
+      }
+      .lightbox-card {
+        max-width: min(92vw, 960px);
+        max-height: 90vh;
+        padding: 1rem;
+        display: grid;
+        gap: 0.75rem;
+      }
+      .lightbox-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+      }
+      .lightbox-img {
+        max-width: 100%;
+        max-height: calc(90vh - 5rem);
+        object-fit: contain;
+        border-radius: 8px;
+        background: #0f172a;
+      }
     `
   ]
 })
@@ -840,8 +1098,11 @@ export class CasoDetailComponent implements OnDestroy {
       this.infoMsg.set('');
       this.draftEdits.set({});
       this.replyForm.reset();
+      this.quitarReplyImage();
       this.cancelarEliminacion();
       this.cerrarPanelPrioridad();
+      this.cerrarPanelReapertura();
+      this.cerrarLightbox();
       this.resetStreamingState();
       this.csatSeleccion.set(5);
       this.csatComentario.set('');
@@ -870,6 +1131,18 @@ export class CasoDetailComponent implements OnDestroy {
   readonly streamingTokens = signal<number>(0);
   readonly csatSeleccion = signal<number>(5);
   readonly csatComentario = signal<string>('');
+  readonly reopenPanelOpen = signal<boolean>(false);
+  readonly replyImageBase64 = signal<string | null>(null);
+  readonly replyImageName = signal<string>('');
+  readonly replyImageError = signal<string>('');
+  readonly lightboxImageUrl = signal<string | null>(null);
+
+  @HostListener('document:keydown.escape')
+  onEscapeKey(): void {
+    if (this.lightboxImageUrl()) {
+      this.cerrarLightbox();
+    }
+  }
 
   private countdownTimer: ReturnType<typeof setInterval> | null = null;
   private streamSub: Subscription | null = null;
@@ -936,6 +1209,10 @@ export class CasoDetailComponent implements OnDestroy {
 
   readonly replyForm = this.fb.nonNullable.group({
     texto: ['', [Validators.required, Validators.minLength(5), Validators.maxLength(4000)]]
+  });
+
+  readonly reopenForm = this.fb.nonNullable.group({
+    motivo: ['', [Validators.required, Validators.minLength(10), Validators.maxLength(1000)]]
   });
 
   formatEstado(estado: EstadoCaso): string {
@@ -1140,12 +1417,113 @@ export class CasoDetailComponent implements OnDestroy {
     this.errorMsg.set('');
     this.infoMsg.set('');
 
-    this.casosService.agregarRespuesta(current.id, this.replyForm.getRawValue().texto).subscribe({
-      next: () => {
+    this.casosService
+      .agregarRespuesta(current.id, this.replyForm.getRawValue().texto, this.replyImageBase64())
+      .subscribe({
+        next: () => {
+          this.busy.set(false);
+          this.replyForm.reset();
+          this.quitarReplyImage();
+          this.infoMsg.set('Respuesta publicada en el historial del caso.');
+          this.reloadCaso(current.id);
+        },
+        error: (err: unknown) => {
+          this.busy.set(false);
+          this.errorMsg.set(this.extractErrorMessage(err));
+        }
+      });
+  }
+
+  onReplyImageSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    this.replyImageError.set('');
+
+    if (!file) {
+      this.replyImageBase64.set(null);
+      this.replyImageName.set('');
+      return;
+    }
+
+    const validationError = validateImageAttachment(file);
+    if (validationError) {
+      this.replyImageBase64.set(null);
+      this.replyImageName.set('');
+      this.replyImageError.set(validationError);
+      input.value = '';
+      return;
+    }
+
+    void readImageAsDataUrl(file)
+      .then((dataUrl) => {
+        this.replyImageBase64.set(dataUrl);
+        this.replyImageName.set(file.name);
+      })
+      .catch((err: unknown) => {
+        this.replyImageBase64.set(null);
+        this.replyImageName.set('');
+        this.replyImageError.set(err instanceof Error ? err.message : 'Error al leer la imagen.');
+      });
+  }
+
+  quitarReplyImage(inputEl?: HTMLInputElement): void {
+    this.replyImageBase64.set(null);
+    this.replyImageName.set('');
+    this.replyImageError.set('');
+    if (inputEl) {
+      inputEl.value = '';
+    }
+  }
+
+  abrirLightbox(imageUrl: string): void {
+    this.lightboxImageUrl.set(imageUrl);
+  }
+
+  cerrarLightbox(): void {
+    this.lightboxImageUrl.set(null);
+  }
+
+  abrirPanelReapertura(): void {
+    this.reopenForm.reset({ motivo: '' });
+    this.errorMsg.set('');
+    this.infoMsg.set('');
+    this.reopenPanelOpen.set(true);
+  }
+
+  cerrarPanelReapertura(): void {
+    this.reopenPanelOpen.set(false);
+    this.reopenForm.reset({ motivo: '' });
+  }
+
+  confirmarReapertura(): void {
+    const current = this.casoSignal();
+    if (!current) {
+      return;
+    }
+
+    if (this.reopenForm.invalid) {
+      this.reopenForm.markAllAsTouched();
+      return;
+    }
+
+    const motivoTrim = this.reopenForm.getRawValue().motivo.trim();
+    if (motivoTrim.length < 10) {
+      this.reopenForm.controls.motivo.setErrors({ minlength: true });
+      this.reopenForm.markAllAsTouched();
+      return;
+    }
+
+    this.busy.set(true);
+    this.errorMsg.set('');
+    this.infoMsg.set('');
+
+    this.casosService.reabrirCaso(current.id, motivoTrim).subscribe({
+      next: (actualizado) => {
         this.busy.set(false);
-        this.replyForm.reset();
-        this.infoMsg.set('Respuesta publicada en el historial del caso.');
-        this.reloadCaso(current.id);
+        this.casoSignal.set(actualizado);
+        this.cerrarPanelReapertura();
+        this.infoMsg.set('Caso reabierto correctamente. Estado actual: En Proceso.');
+        this.casoActualizado.emit(actualizado);
       },
       error: (err: unknown) => {
         this.busy.set(false);

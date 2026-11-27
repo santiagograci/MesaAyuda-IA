@@ -62,6 +62,9 @@ namespace MesaAyuda.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("FechaEliminacion")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("ImagenAdjuntaBase64")
+                        .HasColumnType("text");
+
                     b.Property<string>("Prioridad")
                         .IsRequired()
                         .HasMaxLength(30)
@@ -81,6 +84,25 @@ namespace MesaAyuda.Infrastructure.Persistence.Migrations
                     b.HasIndex("Estado");
 
                     b.ToTable("casos", (string)null);
+                });
+
+            modelBuilder.Entity("MesaAyuda.Domain.Entities.MetricaSistema", b =>
+                {
+                    b.Property<string>("Clave")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<DateTime>("FechaActualizacion")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Valor")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.HasKey("Clave");
+
+                    b.ToTable("metricas_sistema", (string)null);
                 });
 
             modelBuilder.Entity("MesaAyuda.Domain.Entities.Respuesta", b =>
@@ -111,6 +133,9 @@ namespace MesaAyuda.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("text")
                         .HasDefaultValue("[]");
+
+                    b.Property<string>("ImagenAdjuntaBase64")
+                        .HasColumnType("text");
 
                     b.Property<string>("Texto")
                         .IsRequired()

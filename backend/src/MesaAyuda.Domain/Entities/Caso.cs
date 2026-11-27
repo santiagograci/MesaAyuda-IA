@@ -1,3 +1,4 @@
+using MesaAyuda.Domain.Common;
 using MesaAyuda.Domain.Enums;
 using MesaAyuda.Domain.Exceptions;
 
@@ -43,6 +44,9 @@ public class Caso
     /// <summary>Fecha UTC en que el caso fue marcado como eliminado, o nulo si está activo.</summary>
     public DateTime? FechaEliminacion { get; private set; }
 
+    /// <summary>Captura de pantalla inicial opcional adjunta por el cliente en formato Data URL Base64.</summary>
+    public string? ImagenAdjuntaBase64 { get; private set; }
+
     /// <summary>Identificador del usuario cliente propietario del caso.</summary>
     public Guid ClienteId { get; private set; }
 
@@ -59,7 +63,12 @@ public class Caso
     /// <summary>
     /// Crea un nuevo caso en estado inicial <see cref="EstadoCaso.Abierto"/>.
     /// </summary>
-    public Caso(string titulo, string descripcion, PrioridadCaso prioridad, Guid clienteId)
+    public Caso(
+        string titulo,
+        string descripcion,
+        PrioridadCaso prioridad,
+        Guid clienteId,
+        string? imagenAdjuntaBase64 = null)
     {
         if (string.IsNullOrWhiteSpace(titulo))
             throw new DomainException("El título del caso es obligatorio.");
@@ -75,6 +84,7 @@ public class Caso
         Estado = EstadoCaso.Abierto;
         FechaCreacion = DateTime.UtcNow;
         ClienteId = clienteId;
+        ImagenAdjuntaBase64 = ImageAttachmentPolicy.NormalizeAndValidate(imagenAdjuntaBase64);
     }
 
     /// <summary>
@@ -124,7 +134,7 @@ public class Caso
     /// <summary>
     /// Agrega una respuesta humana publicada y transiciona automáticamente el caso de Abierto a EnProceso.
     /// </summary>
-    public Respuesta AgregarRespuestaHumana(string texto, string autorNombre)
+    public Respuesta AgregarRespuestaHumana(string texto, string autorNombre, string? imagenAdjuntaBase64 = null)
     {
         EnsureNotDeleted();
 
@@ -136,7 +146,8 @@ public class Caso
             texto: texto,
             esGeneradaPorIA: false,
             aprobadaPorAnalista: true,
-            autorNombre: autorNombre);
+            autorNombre: autorNombre,
+            imagenAdjuntaBase64: imagenAdjuntaBase64);
 
         _respuestas.Add(respuesta);
 
@@ -263,6 +274,37 @@ public class Caso
 
         Prioridad = nuevaPrioridad;
         FechaActualizacion = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Reabre un caso Resuelto o Cerrado devolviéndolo a <see cref="EstadoCaso.EnProceso"/> con auditoría obligatoria.
+    /// </summary>
+    public Respuesta ReabrirCaso(string motivo, string autorNombre)
+    {
+        EnsureNotDeleted();
+
+        if (Estado is not (EstadoCaso.Resuelto or EstadoCaso.Cerrado))
+            throw new DomainException("Solo se pueden reabrir casos en estado Resuelto o Cerrado.");
+
+        var motivoLimpio = motivo?.Trim() ?? string.Empty;
+        if (motivoLimpio.Length < 10)
+            throw new DomainException("El motivo de reapertura debe tener al menos 10 caracteres.");
+
+        if (string.IsNullOrWhiteSpace(autorNombre))
+            throw new DomainException("El nombre del autor de la reapertura es obligatorio.");
+
+        Estado = EstadoCaso.EnProceso;
+        FechaActualizacion = DateTime.UtcNow;
+
+        var evento = new Respuesta(
+            casoId: Id,
+            texto: $"🔄 [Caso Reabierto: {motivoLimpio}]",
+            esGeneradaPorIA: false,
+            aprobadaPorAnalista: true,
+            autorNombre: autorNombre);
+
+        _respuestas.Add(evento);
+        return evento;
     }
 
     /// <summary>

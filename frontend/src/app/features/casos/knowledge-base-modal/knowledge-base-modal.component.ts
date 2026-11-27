@@ -17,9 +17,9 @@ const ALLOWED_EXTENSIONS = ['.md', '.txt', '.pdf'];
   selector: 'app-knowledge-base-modal',
   standalone: true,
   template: `
-    <div class="modal-backdrop" (click)="close.emit()">
+    <div class="modal-backdrop anim-backdrop" (click)="close.emit()">
       <section
-        class="modal-card card-surface"
+        class="modal-card card-surface anim-modal"
         role="dialog"
         aria-modal="true"
         aria-label="Gestor de Base de Conocimiento RAG"

@@ -41,4 +41,10 @@ public interface ICasoRepository
 
     /// <summary>Marca un caso existente para eliminación en la unidad de trabajo.</summary>
     void Remove(Caso caso);
+
+    /// <summary>Incrementa en 1 el contador global persistente de deflexiones RAG evitadas.</summary>
+    Task<int> IncrementarDeflexionAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Obtiene el total histórico de deflexiones RAG evitadas registrado en base de datos.</summary>
+    Task<int> ObtenerDeflexionesAsync(CancellationToken cancellationToken = default);
 }
