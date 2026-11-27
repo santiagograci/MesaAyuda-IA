@@ -4,6 +4,7 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { DemoUser } from '../../core/models/api.models';
 import { AuthService } from '../../core/services/auth.service';
+import { OfimaLogoComponent } from '../../shared/ofima-logo/ofima-logo.component';
 import { ThemeCustomizerComponent } from '../../shared/theme-customizer/theme-customizer.component';
 
 const FALLBACK_DEMO_USERS: DemoUser[] = [
@@ -30,7 +31,7 @@ const FALLBACK_DEMO_USERS: DemoUser[] = [
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [ReactiveFormsModule, ThemeCustomizerComponent],
+  imports: [ReactiveFormsModule, ThemeCustomizerComponent, OfimaLogoComponent],
   template: `
     <div class="login-page">
       <div class="login-topbar">
@@ -39,8 +40,7 @@ const FALLBACK_DEMO_USERS: DemoUser[] = [
 
       <main class="login-card card-surface">
         <header class="login-header">
-          <div class="brand-pill">Ofima S.A.S. · Soporte Empresarial</div>
-          <h1>MesaAyuda IA</h1>
+          <app-ofima-logo variant="full" />
           <p>Ingresa con tus credenciales o usa un acceso rápido de demostración.</p>
         </header>
 
@@ -126,24 +126,13 @@ const FALLBACK_DEMO_USERS: DemoUser[] = [
       }
       .login-header {
         margin-bottom: 1.5rem;
-        h1 {
-          margin: 0.45rem 0 0.25rem;
-          font-size: 1.65rem;
-        }
+        display: grid;
+        gap: 0.75rem;
         p {
           margin: 0;
           color: var(--text-secondary);
           font-size: 0.9rem;
         }
-      }
-      .brand-pill {
-        display: inline-block;
-        padding: 0.2rem 0.65rem;
-        border-radius: 999px;
-        background: var(--accent-soft);
-        color: var(--accent-primary);
-        font-size: 0.75rem;
-        font-weight: 700;
       }
       .login-form {
         display: grid;

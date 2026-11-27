@@ -2,6 +2,7 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { CasoDetalle, CasoResumen, EstadoCaso } from '../../core/models/api.models';
 import { AuthService } from '../../core/services/auth.service';
 import { CasosService } from '../../core/services/casos.service';
+import { OfimaLogoComponent } from '../../shared/ofima-logo/ofima-logo.component';
 import { ThemeCustomizerComponent } from '../../shared/theme-customizer/theme-customizer.component';
 import { CasoCreateComponent } from './caso-create/caso-create.component';
 import { CasoDetailComponent } from './caso-detail/caso-detail.component';
@@ -15,6 +16,7 @@ import { CasosListComponent } from './casos-list/casos-list.component';
   standalone: true,
   imports: [
     ThemeCustomizerComponent,
+    OfimaLogoComponent,
     CasosListComponent,
     CasoDetailComponent,
     CasoCreateComponent
@@ -22,13 +24,7 @@ import { CasosListComponent } from './casos-list/casos-list.component';
   template: `
     <div class="shell-wrapper">
       <header class="topbar card-surface">
-        <div class="brand-area">
-          <span class="brand-logo">Ofima</span>
-          <div>
-            <strong>MesaAyuda IA</strong>
-            <span class="sub">Soporte Empresarial con RAG</span>
-          </div>
-        </div>
+        <app-ofima-logo variant="compact" />
 
         <div class="user-area">
           @if (authService.currentUser(); as user) {
@@ -109,26 +105,6 @@ import { CasosListComponent } from './casos-list/casos-list.component';
         border-left: 0;
         border-right: 0;
         border-top: 0;
-      }
-      .brand-area {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        .sub {
-          display: block;
-          font-size: 0.75rem;
-          color: var(--text-secondary);
-        }
-      }
-      .brand-logo {
-        display: inline-grid;
-        place-items: center;
-        padding: 0.35rem 0.65rem;
-        border-radius: calc(var(--radius-card) * 0.7);
-        background: var(--accent-primary);
-        color: #ffffff;
-        font-weight: 800;
-        font-size: 0.85rem;
       }
       .user-area {
         display: flex;
