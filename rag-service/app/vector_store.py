@@ -249,3 +249,15 @@ class HybridVectorStore:
     def count(self) -> int:
         """Retorna la cantidad de fragmentos actualmente indexados."""
         return int(self._collection.count())
+
+    def list_documents(self) -> list[tuple[str, int]]:
+        """Retorna pares (documento, cantidad_fragmentos) ordenados alfabéticamente."""
+        if not self._chunks and self.count() > 0:
+            self._hydrate_from_collection()
+
+        counts: dict[str, int] = {}
+        for chunk in self._chunks:
+            doc_name = chunk.metadata.documento or "sin-nombre"
+            counts[doc_name] = counts.get(doc_name, 0) + 1
+
+        return sorted(counts.items(), key=lambda item: item[0].lower())

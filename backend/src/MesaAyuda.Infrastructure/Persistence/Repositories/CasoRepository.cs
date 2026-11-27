@@ -99,7 +99,8 @@ public class CasoRepository : ICasoRepository
             var term = searchTerm.Trim().ToLowerInvariant();
             query = query.Where(c =>
                 c.Titulo.ToLower().Contains(term) ||
-                c.Descripcion.ToLower().Contains(term));
+                c.Descripcion.ToLower().Contains(term) ||
+                (c.Cliente != null && c.Cliente.Nombre.ToLower().Contains(term)));
         }
 
         var totalCount = await query.CountAsync(cancellationToken);

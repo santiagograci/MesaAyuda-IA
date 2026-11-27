@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import re
+import shutil
+from pathlib import Path
 
 from app.config import settings
-from app.ingestion import load_and_chunk_corpus
+from app.ingestion import load_and_chunk_corpus, sanitize_upload_filename
 from app.llm_provider import LLMProvider
 from app.models import (
+    DocumentoIndexado,
+    DocumentosResponse,
     FuenteCitada,
+    IngestaArchivoResponse,
     IngestResponse,
     PreguntaRequest,
     PreguntaResponse,
@@ -83,6 +88,67 @@ class RagEngine:
         return IngestResponse(
             documentos_procesados=docs_count,
             fragmentos_indexados=indexed_count,
+            estado="ok",
+        )
+
+    def list_documents(self) -> DocumentosResponse:
+        """Devuelve la lista de documentos únicos indexados y sus fragmentos."""
+        pairs = self.vector_store.list_documents()
+        documentos = [
+            DocumentoIndexado(documento=doc, fragmentos=count)
+            for doc, count in pairs
+        ]
+        return DocumentosResponse(
+            documentos=documentos,
+            total_documentos=len(documentos),
+            total_fragmentos=sum(item.fragmentos for item in documentos),
+        )
+
+    def ingest_uploaded_file(
+        self,
+        filename: str,
+        content: bytes,
+        corpus_path: str | None = None,
+    ) -> IngestaArchivoResponse:
+        """Guarda un manual subido, ejecuta reindexación completa e invalida caché."""
+        max_bytes = 5 * 1024 * 1024
+        safe_name = sanitize_upload_filename(filename)
+
+        if not content:
+            raise ValueError("El archivo subido está vacío.")
+        if len(content) > max_bytes:
+            raise ValueError("El archivo excede el tamaño máximo permitido de 5 MB.")
+
+        target_dir = Path(corpus_path or settings.corpus_path)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_file = target_dir / safe_name
+        backup_bytes = target_file.read_bytes() if target_file.exists() else None
+        target_file.write_bytes(content)
+
+        try:
+            ingest_result = self.ingest(str(target_dir))
+            doc_counts = dict(self.vector_store.list_documents())
+            fragmentos_archivo = doc_counts.get(safe_name, 0)
+            if fragmentos_archivo == 0:
+                raise ValueError(
+                    "No se pudo extraer contenido indexable del archivo proporcionado."
+                )
+        except Exception:
+            if backup_bytes is not None:
+                target_file.write_bytes(backup_bytes)
+            elif target_file.exists():
+                target_file.unlink()
+            try:
+                self.ingest(str(target_dir))
+            except Exception:
+                pass
+            raise
+
+        return IngestaArchivoResponse(
+            archivo=safe_name,
+            fragmentos_archivo=fragmentos_archivo,
+            total_documentos=ingest_result.documentos_procesados,
+            total_fragmentos=ingest_result.fragmentos_indexados,
             estado="ok",
         )
 

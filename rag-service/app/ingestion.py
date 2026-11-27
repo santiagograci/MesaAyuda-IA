@@ -7,7 +7,7 @@ from pypdf import PdfReader
 
 from app.models import ChunkMetadata, TextChunk
 
-_SUPPORTED_EXTENSIONS: frozenset[str] = frozenset({".md", ".pdf"})
+_SUPPORTED_EXTENSIONS: frozenset[str] = frozenset({".md", ".txt", ".pdf"})
 _SEPARATORS: tuple[str, ...] = ("\n\n", "\n", ". ", "; ", " ", "")
 
 
@@ -105,6 +105,31 @@ def parse_pdf_pages(file_path: Path) -> list[tuple[str, str]]:
         if cleaned:
             pages.append((f"Página {idx + 1}", cleaned))
     return pages
+
+
+def parse_txt_sections(content: str, filename: str) -> list[tuple[str, str]]:
+    """Limpia texto plano `.txt` preservando el nombre del documento como sección."""
+    cleaned = clean_text(content)
+    if not cleaned:
+        return []
+    return [(Path(filename).stem, cleaned)]
+
+
+def sanitize_upload_filename(filename: str) -> str:
+    """Normaliza el nombre de archivo subido y valida que tenga extensión soportada."""
+    raw_name = Path(filename.strip()).name
+    if not raw_name or raw_name in {".", ".."}:
+        raise ValueError("El nombre del archivo es inválido.")
+
+    ext = Path(raw_name).suffix.lower()
+    if ext not in _SUPPORTED_EXTENSIONS:
+        raise ValueError("Formato no soportado. Solo se permiten archivos .md, .txt o .pdf.")
+
+    stem = re.sub(r"[^a-zA-Z0-9._-]+", "-", Path(raw_name).stem).strip("-.")
+    if not stem:
+        stem = "manual-erp"
+
+    return f"{stem}{ext}"
 
 
 def _split_segment(segment: str, chunk_size: int, separators: tuple[str, ...]) -> list[str]:
@@ -238,6 +263,9 @@ def load_and_chunk_corpus(
         if suffix == ".md":
             content = file_path.read_text(encoding="utf-8", errors="replace")
             sections = parse_markdown_sections(content, file_path.name)
+        elif suffix == ".txt":
+            content = file_path.read_text(encoding="utf-8", errors="replace")
+            sections = parse_txt_sections(content, file_path.name)
         else:
             sections = parse_pdf_pages(file_path)
 

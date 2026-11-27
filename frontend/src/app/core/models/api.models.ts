@@ -196,3 +196,25 @@ export type RagStreamEvent =
   | { type: 'token'; chunk: string }
   | { type: 'done'; caso: CasoDetalle }
   | { type: 'error'; detail: string };
+
+/** Manual indexado en la base vectorial RAG y su cantidad de fragmentos. */
+export interface DocumentoIndexado {
+  documento: string;
+  fragmentos: number;
+}
+
+/** Inventario completo devuelto por GET /api/documentos. */
+export interface DocumentosRagResponse {
+  documentos: DocumentoIndexado[];
+  totalDocumentos: number;
+  totalFragmentos: number;
+}
+
+/** Resultado devuelto por POST /api/documentos/ingestar. */
+export interface IngestaArchivoResponse {
+  archivo: string;
+  fragmentosArchivo: number;
+  totalDocumentos: number;
+  totalFragmentos: number;
+  estado: string;
+}

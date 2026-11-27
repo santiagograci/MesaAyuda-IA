@@ -14,3 +14,26 @@ public record RagPreguntaResponse(
     int TokensUsados,
     bool Anclado,
     string ProveedorLlm);
+
+/// <summary>
+/// Resumen de un manual indexado en la base vectorial RAG y su cantidad de fragmentos.
+/// </summary>
+public record DocumentoIndexadoDto(string Documento, int Fragmentos);
+
+/// <summary>
+/// Inventario completo de manuales indexados devuelto por GET /documentos del servicio RAG.
+/// </summary>
+public record DocumentosRagResponse(
+    List<DocumentoIndexadoDto> Documentos,
+    int TotalDocumentos,
+    int TotalFragmentos);
+
+/// <summary>
+/// Resultado de ingestar e indexar un manual individual en el servicio RAG.
+/// </summary>
+public record IngestaArchivoResponse(
+    string Archivo,
+    int FragmentosArchivo,
+    int TotalDocumentos,
+    int TotalFragmentos,
+    string Estado);

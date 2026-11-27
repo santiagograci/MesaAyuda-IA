@@ -274,6 +274,29 @@ public class CasoDomainAndServiceTests
         Assert.Contains("[Cambio de Prioridad: Alta ➔ Baja]", audit.Texto);
     }
 
+    [Fact]
+    public async Task ListarCasos_ConPrioridadYBusqueda_FiltraCorrectamentePorTituloYCliente()
+    {
+        var c1 = new Usuario("Carlos Mendoza - Contabilidad", "c1@empresa.com", "h", RolUsuario.Cliente);
+        var c2 = new Usuario("Laura Gómez - Tesorería", "c2@empresa.com", "h", RolUsuario.Cliente);
+
+        var casoA = new Caso("Error CON-301 cierre contable", "Saldo pendiente cuenta 999905 en octubre.", PrioridadCaso.Critica, c1.Id);
+        var casoB = new Caso("Consulta catálogo inventarios", "Duda general sobre creación de bodega.", PrioridadCaso.Baja, c2.Id);
+        typeof(Caso).GetProperty(nameof(Caso.Cliente))!.SetValue(casoA, c1);
+        typeof(Caso).GetProperty(nameof(Caso.Cliente))!.SetValue(casoB, c2);
+
+        var repo = new FakeCasoRepository(new[] { casoA, casoB });
+        var service = BuildCasoService(repo, new FakeUsuarioRepository(new[] { c1, c2 }), new FakeUnitOfWork(), new StubRagServiceClient());
+
+        var porCodigo = await service.ListarCasosAsync(c1.Id, "Analista", null, 1, 10, "Critica", "con-301");
+        var item1 = Assert.Single(porCodigo.Items);
+        Assert.Equal(casoA.Id, item1.Id);
+
+        var porCliente = await service.ListarCasosAsync(c1.Id, "Analista", null, 1, 10, "Baja", "Laura");
+        var item2 = Assert.Single(porCliente.Items);
+        Assert.Equal(casoB.Id, item2.Id);
+    }
+
     private static CasoService BuildCasoService(
         FakeCasoRepository casoRepo,
         FakeUsuarioRepository usuarioRepo,
@@ -326,6 +349,14 @@ public class CasoDomainAndServiceTests
             if (clienteId.HasValue) q = q.Where(c => c.ClienteId == clienteId.Value);
             if (estado.HasValue) q = q.Where(c => c.Estado == estado.Value);
             if (prioridad.HasValue) q = q.Where(c => c.Prioridad == prioridad.Value);
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                var term = searchTerm.Trim().ToLowerInvariant();
+                q = q.Where(c =>
+                    c.Titulo.ToLower().Contains(term) ||
+                    c.Descripcion.ToLower().Contains(term) ||
+                    (c.Cliente != null && c.Cliente.Nombre.ToLower().Contains(term)));
+            }
             var list = q.ToList();
             return Task.FromResult<(IReadOnlyList<Caso>, int)>((list.Skip((page - 1) * pageSize).Take(pageSize).ToList(), list.Count));
         }
@@ -404,5 +435,18 @@ public class CasoDomainAndServiceTests
 
             return Task.FromResult(response);
         }
+
+        public Task<DocumentosRagResponse> ListarDocumentosAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(new DocumentosRagResponse(
+                new List<DocumentoIndexadoDto> { new("01-facturacion-electronica-y-anulaciones.md", 14) },
+                1,
+                14));
+
+        public Task<IngestaArchivoResponse> IngestarArchivoAsync(
+            string fileName,
+            byte[] content,
+            string contentType,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new IngestaArchivoResponse(fileName, 3, 2, 17, "ok"));
     }
 }

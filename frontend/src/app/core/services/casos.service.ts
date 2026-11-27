@@ -32,11 +32,13 @@ export class CasosService {
   private readonly ngZone = inject(NgZone);
   private readonly baseUrl = '/api/casos';
 
-  /** Obtiene una página de casos filtrada opcionalmente por estado. */
+  /** Obtiene una página de casos filtrada opcionalmente por estado, prioridad y búsqueda. */
   listarCasos(
     estado: EstadoCaso | '' = '',
     page = 1,
-    pageSize = 8
+    pageSize = 8,
+    prioridad: PrioridadCaso | '' = '',
+    busqueda = ''
   ): Observable<PagedResult<CasoResumen>> {
     let params = new HttpParams()
       .set('page', page.toString())
@@ -44,6 +46,13 @@ export class CasosService {
 
     if (estado) {
       params = params.set('estado', estado);
+    }
+    if (prioridad) {
+      params = params.set('prioridad', prioridad);
+    }
+    const term = busqueda.trim();
+    if (term) {
+      params = params.set('busqueda', term);
     }
 
     return this.http.get<PagedResult<CasoResumen>>(this.baseUrl, { params });

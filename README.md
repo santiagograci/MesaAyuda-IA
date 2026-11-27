@@ -13,10 +13,10 @@ Plataforma empresarial de mesa de ayuda inteligente para **Ofima ERP**, diseñad
 
 ### Patrones de Arquitectura y Diseño Aplicados
 
-- **Clean Architecture & DDD Táctico (.NET 8):** separación en `Domain`, `Application`, `Infrastructure` y `Api`, entidades ricas (`Caso`, `Respuesta`) que encapsulan invariantes y máquina de estados, `ICasoRepository` + `IUnitOfWork`, validación con FluentValidation y manejo global RFC 7807 (`IExceptionHandler` + `ProblemDetails`).
-- **Resiliencia Distribuida:** `Microsoft.Extensions.Http.Resilience` (Polly v8) con timeout por intento de `8s`, `2` reintentos con *exponential backoff* + *jitter*, Circuit Breaker y degradación controlada si el servicio RAG no responde.
-- **Patrón Strategy & Caché LRU (Python):** proveedores intercambiables (`GroundedExtractiveMockProvider`, `GeminiLLMProvider`, `OpenAILLMProvider`) con fallback automático, anclaje estricto por umbral (`0.35`) y caché LRU para embeddings de consulta.
-- **Angular Signals & CSS Custom Properties:** estado reactivo sin sobrecarga de Redux, lazy loading por ruta (`loadComponent`), interceptor funcional JWT y motor de temas Claro/Oscuro con 3 máscaras predefinidas y creador personalizado.
+- **Clean Architecture & DDD Táctico (.NET 8):** separación en `Domain`, `Application`, `Infrastructure` y `Api`, entidades ricas (`Caso`, `Respuesta`) que encapsulan invariantes, máquina de estados, borrado lógico (papelera), escalamiento de prioridad con auditoría, `ICasoRepository` + `IUnitOfWork`, validación con FluentValidation y manejo global RFC 7807 (`IExceptionHandler` + `ProblemDetails`).
+- **Resiliencia Distribuida & Gateway IA:** `Microsoft.Extensions.Http.Resilience` (Polly v8) con timeout por intento de `15s`, `2` reintentos con *exponential backoff* + *jitter*, Circuit Breaker y degradación controlada; streaming SSE en tiempo real (`POST /api/casos/{id}/sugerencia/stream`), KPIs operativos/FinOps (`GET /api/casos/metricas`) y pasarela documental segura para analistas (`GET /api/documentos`, `POST /api/documentos/ingestar`).
+- **Patrón Strategy & Caché LRU (Python):** proveedores intercambiables (`GroundedExtractiveMockProvider`, `GeminiLLMProvider`, `OpenAILLMProvider`) con fallback automático, anclaje estricto por umbral (`0.35`), caché LRU para embeddings de consulta e ingesta en vivo de manuales `.md`, `.txt` y `.pdf` (`GET /documentos`, `POST /ingesta/archivo`).
+- **Angular Signals & CSS Custom Properties:** estado reactivo sin sobrecarga de Redux, lazy loading por ruta (`loadComponent`), interceptor funcional JWT, cierre automático por inactividad (10 min con alerta en el último minuto), búsqueda instantánea (debounce 300ms) + filtro de prioridad, dashboard FinOps de 4 tarjetas, gestor modal de base de conocimiento RAG y motor de temas Claro/Oscuro con 3 máscaras predefinidas y creador personalizado.
 
 ## Inicio Rápido (Un Solo Comando)
 
@@ -75,9 +75,9 @@ La batería automatizada sobre los **6 manuales de Ofima ERP** (`86` fragmentos 
 
 ## Pruebas Automatizadas e Integración Continua
 
-- **Python RAG (`rag-service`):** `pytest -v` -> **6 passed** (chunking con metadatos, recuperación y citación `FAC-402`, rechazo fuera de dominio, bloqueo HTTP `400` de *prompt injection*, endpoints `/health` y `/ingesta`, caché LRU).
-- **.NET 8 Backend (`backend`):** `dotnet test backend/MesaAyuda.sln` -> **10 passed** (**6** pruebas unitarias de dominio/aplicación + **4** pruebas de integración HTTP end-to-end con `WebApplicationFactory` y EF Core InMemory).
-- **Angular 18 Frontend (`frontend`):** `npm test` (Jasmine/Karma en Chrome Headless) -> **4 passed** (`AuthService` con `HttpTestingController` y Signals + `CasosListComponent` con badges y eventos de filtro/selección).
+- **Python RAG (`rag-service`):** `pytest -v` -> **7 passed** (chunking con metadatos, recuperación y citación `FAC-402`, rechazo fuera de dominio, bloqueo HTTP `400` de *prompt injection*, `/health`, `/ingesta`, caché LRU, `/documentos` e ingesta en vivo de archivo `/ingesta/archivo`).
+- **.NET 8 Backend (`backend`):** `dotnet test backend/MesaAyuda.sln` -> **19 passed** (**11** pruebas unitarias de dominio/aplicación + **8** pruebas de integración HTTP end-to-end con `WebApplicationFactory` y EF Core InMemory cubriendo ciclo completo, papelera/soft delete, escalamiento de prioridad, streaming SSE, métricas KPI, filtros y documentos RAG).
+- **Angular 18 Frontend (`frontend`):** `npm test` (Jasmine/Karma en Chrome Headless) -> **16 passed** (`AuthService`, `IdleTimeoutService` con `fakeAsync`/`tick`, `CasosListComponent` con papelera/búsqueda 300ms/prioridad, `CasoDetailComponent` con cuenta regresiva 3s/prioridad/SSE y `KnowledgeBaseModalComponent`).
 - **GitHub Actions (`.github/workflows/ci.yml`):** ejecuta los 3 pipelines en paralelo ante cada `push` y `pull_request` a `main`.
 
 ## Documentación Técnica y Arquitectura

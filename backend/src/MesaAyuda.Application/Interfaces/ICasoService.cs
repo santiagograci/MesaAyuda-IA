@@ -8,13 +8,15 @@ namespace MesaAyuda.Application.Interfaces;
 /// </summary>
 public interface ICasoService
 {
-    /// <summary>Lista casos paginados filtrando por propiedad cuando el rol es Cliente.</summary>
+    /// <summary>Lista casos paginados filtrando por propiedad, estado, prioridad y búsqueda textual.</summary>
     Task<PagedResult<CasoResumenDto>> ListarCasosAsync(
         Guid usuarioId,
         string rol,
         string? estado,
         int page,
         int pageSize,
+        string? prioridad = null,
+        string? busqueda = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>Obtiene el detalle completo de un caso validando propiedad si el usuario es Cliente.</summary>

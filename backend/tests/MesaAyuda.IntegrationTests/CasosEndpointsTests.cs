@@ -68,6 +68,23 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 Anclado: true,
                 ProveedorLlm: "stub-integration"));
         }
+
+        public Task<DocumentosRagResponse> ListarDocumentosAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(new DocumentosRagResponse(
+                new List<DocumentoIndexadoDto>
+                {
+                    new("01-facturacion-electronica-y-anulaciones.md", 14),
+                    new("02-cierre-contable-y-conciliacion.md", 16)
+                },
+                2,
+                30));
+
+        public Task<IngestaArchivoResponse> IngestarArchivoAsync(
+            string fileName,
+            byte[] content,
+            string contentType,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new IngestaArchivoResponse(fileName, 4, 3, 34, "ok"));
     }
 }
 
@@ -428,6 +445,57 @@ public class CasosEndpointsTests : IClassFixture<CustomWebApplicationFactory>
         Assert.True(metricasAnalista!.SugerenciasIaGeneradas >= 1);
         Assert.True(metricasAnalista.TokensTotalesConsumidos >= 190);
         Assert.True(metricasAnalista.CasosCriticosActivos >= 1);
+    }
+
+    [Fact]
+    public async Task FiltrosBusquedaYPrioridad_YDocumentosRagEndpoints_FuncionanConControlDeRoles()
+    {
+        using var client = _factory.CreateClient();
+
+        var loginCliente = await LoginAsync(client, "cliente@empresa.com", "Ofima2026*");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", loginCliente.Token);
+
+        // Cliente no puede acceder a /api/documentos ni /api/documentos/ingestar
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/documentos")).StatusCode);
+
+        using var forbiddenForm = new MultipartFormDataContent();
+        forbiddenForm.Add(new ByteArrayContent(System.Text.Encoding.UTF8.GetBytes("# Manual\nContenido")), "archivo", "test.md");
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsync("/api/documentos/ingestar", forbiddenForm)).StatusCode);
+
+        // Analista filtra por prioridad=Critica y busqueda=CON-301
+        var loginAnalista = await LoginAsync(client, "analista@ofima.com", "Ofima2026*");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", loginAnalista.Token);
+
+        var filteredRes = await client.GetAsync("/api/casos?prioridad=Critica&busqueda=CON-301");
+        Assert.Equal(HttpStatusCode.OK, filteredRes.StatusCode);
+        var paged = await filteredRes.Content.ReadFromJsonAsync<PagedResult<CasoResumenDto>>(JsonOptions);
+        Assert.NotNull(paged);
+        Assert.NotEmpty(paged!.Items);
+        Assert.All(paged.Items, c => Assert.Equal("Critica", c.Prioridad));
+        Assert.Contains(paged.Items, c => c.Titulo.Contains("CON-301", StringComparison.OrdinalIgnoreCase));
+
+        // Analista consulta GET /api/documentos
+        var docsRes = await client.GetAsync("/api/documentos");
+        Assert.Equal(HttpStatusCode.OK, docsRes.StatusCode);
+        var docs = await docsRes.Content.ReadFromJsonAsync<DocumentosRagResponse>(JsonOptions);
+        Assert.NotNull(docs);
+        Assert.Equal(2, docs!.TotalDocumentos);
+
+        // Extensión inválida retorna 400 BadRequest
+        using var invalidForm = new MultipartFormDataContent();
+        invalidForm.Add(new ByteArrayContent(new byte[] { 1, 2, 3 }), "archivo", "virus.exe");
+        var invalidRes = await client.PostAsync("/api/documentos/ingestar", invalidForm);
+        Assert.Equal(HttpStatusCode.BadRequest, invalidRes.StatusCode);
+
+        // Archivo .md válido retorna 200 OK
+        using var validForm = new MultipartFormDataContent();
+        validForm.Add(new ByteArrayContent(System.Text.Encoding.UTF8.GetBytes("# Manual POS\nProceso POS-100.")), "archivo", "manual-pos.md");
+        var uploadRes = await client.PostAsync("/api/documentos/ingestar", validForm);
+        Assert.Equal(HttpStatusCode.OK, uploadRes.StatusCode);
+        var uploadDto = await uploadRes.Content.ReadFromJsonAsync<IngestaArchivoResponse>(JsonOptions);
+        Assert.NotNull(uploadDto);
+        Assert.Equal("manual-pos.md", uploadDto!.Archivo);
+        Assert.Equal(4, uploadDto.FragmentosArchivo);
     }
 
     private static async Task<LoginResponse> LoginAsync(HttpClient client, string email, string password)

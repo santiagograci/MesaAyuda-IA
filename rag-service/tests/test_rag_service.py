@@ -190,3 +190,68 @@ def test_query_embedding_lru_cache(
     hits_after = store._encode_query_cached.cache_info().hits
 
     assert hits_after == hits_before + 1
+
+
+def test_list_documents_and_upload_txt_manual(
+    shared_embedder: SentenceTransformer,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Verifica GET /documentos, POST /ingesta/archivo (.txt) y consulta inmediata."""
+    for md_file in CORPUS_DIR.glob("*.md"):
+        (tmp_path / md_file.name).write_text(
+            md_file.read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+
+    store, engine = _build_in_memory_engine(shared_embedder)
+    engine.ingest(str(tmp_path))
+
+    monkeypatch.setattr(main_module, "_vector_store", store)
+    monkeypatch.setattr(main_module, "_rag_engine", engine)
+    monkeypatch.setattr(main_module.settings, "corpus_path", str(tmp_path))
+
+    with TestClient(main_module.app) as client:
+        docs_initial = client.get("/documentos")
+        assert docs_initial.status_code == 200
+        initial_json = docs_initial.json()
+        assert initial_json["total_documentos"] == 6
+        assert initial_json["total_fragmentos"] > 0
+
+        invalid_res = client.post(
+            "/ingesta/archivo",
+            files={"file": ("malware.exe", b"MZ...", "application/octet-stream")},
+        )
+        assert invalid_res.status_code == 400
+
+        manual_txt = (
+            "Manual de Integracion POS Ofima ERP.\n"
+            "Cuando aparezca el codigo POS-777 en caja registradora, ingrese a "
+            "POS > Configuracion > Reconexion Terminal TPV y ejecute Sincronizar Contingencia.\n"
+        ).encode("utf-8")
+
+        upload_res = client.post(
+            "/ingesta/archivo",
+            files={"file": ("07-manual-pos-tpv.txt", manual_txt, "text/plain")},
+        )
+        assert upload_res.status_code == 200
+        up_json = upload_res.json()
+        assert up_json["archivo"] == "07-manual-pos-tpv.txt"
+        assert up_json["fragmentos_archivo"] >= 1
+        assert up_json["total_documentos"] == 7
+
+        docs_after = client.get("/documentos")
+        assert docs_after.status_code == 200
+        assert any(
+            d["documento"] == "07-manual-pos-tpv.txt"
+            for d in docs_after.json()["documentos"]
+        )
+
+        ask_res = client.post(
+            "/preguntar",
+            json={"pregunta": "¿Cómo resolver el error POS-777 en caja registradora?", "top_k": 4},
+        )
+        assert ask_res.status_code == 200
+        ask_json = ask_res.json()
+        assert ask_json["anclado"] is True
+        assert "07-manual-pos-tpv.txt" in [f["documento"] for f in ask_json["fuentes"]]

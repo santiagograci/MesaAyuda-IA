@@ -2,6 +2,7 @@ using System.Security.Claims;
 using MesaAyuda.Application.Common;
 using MesaAyuda.Application.DTOs;
 using MesaAyuda.Application.Interfaces;
+using MesaAyuda.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -27,19 +28,29 @@ public class CasosController : ControllerBase
     }
 
     /// <summary>
-    /// Lista casos paginados con filtro opcional por estado (los clientes solo ven sus propios casos).
+    /// Lista casos paginados con filtros opcionales de estado, prioridad y búsqueda textual.
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(PagedResult<CasoResumenDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<PagedResult<CasoResumenDto>>> Listar(
         [FromQuery] string? estado = null,
+        [FromQuery] PrioridadCaso? prioridad = null,
+        [FromQuery] string? busqueda = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 10,
         CancellationToken cancellationToken = default)
     {
         var (usuarioId, rol, _) = GetCurrentUser();
-        var resultado = await _casoService.ListarCasosAsync(usuarioId, rol, estado, page, pageSize, cancellationToken);
+        var resultado = await _casoService.ListarCasosAsync(
+            usuarioId,
+            rol,
+            estado,
+            page,
+            pageSize,
+            prioridad?.ToString(),
+            busqueda,
+            cancellationToken);
         return Ok(resultado);
     }
 

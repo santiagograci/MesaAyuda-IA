@@ -57,3 +57,28 @@ class PreguntaResponse(BaseModel):
     tokens_usados: int = Field(..., ge=0)
     anclado: bool
     proveedor_llm: str
+
+
+class DocumentoIndexado(BaseModel):
+    """Resumen de un manual indexado y su cantidad de fragmentos en ChromaDB."""
+
+    documento: str
+    fragmentos: int = Field(..., ge=0)
+
+
+class DocumentosResponse(BaseModel):
+    """Inventario completo de manuales indexados actualmente en el motor RAG."""
+
+    documentos: list[DocumentoIndexado]
+    total_documentos: int = Field(..., ge=0)
+    total_fragmentos: int = Field(..., ge=0)
+
+
+class IngestaArchivoResponse(BaseModel):
+    """Resultado de subir e indexar un manual individual en la base de conocimiento."""
+
+    archivo: str
+    fragmentos_archivo: int = Field(..., ge=0)
+    total_documentos: int = Field(..., ge=0)
+    total_fragmentos: int = Field(..., ge=0)
+    estado: str

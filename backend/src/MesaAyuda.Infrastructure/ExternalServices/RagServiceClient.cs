@@ -1,7 +1,9 @@
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using MesaAyuda.Application.DTOs;
 using MesaAyuda.Application.Interfaces;
+using MesaAyuda.Domain.Exceptions;
 using Microsoft.Extensions.Logging;
 using Polly.CircuitBreaker;
 using Polly.Timeout;
@@ -99,6 +101,80 @@ public class RagServiceClient : IRagServiceClient
             _logger.LogWarning(ex, "Error deserializando la respuesta del servicio RAG.");
             return CreateFallbackResponse();
         }
+    }
+
+    /// <summary>
+    /// Consulta el endpoint <c>GET /documentos</c> para obtener el inventario indexado en el RAG.
+    /// </summary>
+    public async Task<DocumentosRagResponse> ListarDocumentosAsync(
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _httpClient.GetAsync("/documentos", cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new HttpRequestException(
+                $"El servicio RAG devolvió HTTP {(int)response.StatusCode} al listar documentos: {body}");
+        }
+
+        return await response.Content.ReadFromJsonAsync<DocumentosRagResponse>(
+            SnakeCaseJsonOptions,
+            cancellationToken)
+            ?? new DocumentosRagResponse(new List<DocumentoIndexadoDto>(), 0, 0);
+    }
+
+    /// <summary>
+    /// Envía un manual en memoria al endpoint <c>POST /ingesta/archivo</c> mediante multipart/form-data.
+    /// </summary>
+    public async Task<IngestaArchivoResponse> IngestarArchivoAsync(
+        string fileName,
+        byte[] content,
+        string contentType,
+        CancellationToken cancellationToken = default)
+    {
+        using var multipart = new MultipartFormDataContent();
+        using var fileContent = new ByteArrayContent(content);
+        fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse(
+            string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType);
+        multipart.Add(fileContent, "file", fileName);
+
+        using var response = await _httpClient.PostAsync("/ingesta/archivo", multipart, cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            var detail = ExtractFastApiDetail(errorBody) ?? "El archivo no cumple las validaciones del servicio RAG.";
+            throw new DomainException(detail);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new HttpRequestException(
+                $"El servicio RAG devolvió HTTP {(int)response.StatusCode} al ingestar '{fileName}': {body}");
+        }
+
+        return await response.Content.ReadFromJsonAsync<IngestaArchivoResponse>(
+            SnakeCaseJsonOptions,
+            cancellationToken)
+            ?? throw new HttpRequestException("El servicio RAG devolvió una respuesta vacía tras la ingesta.");
+    }
+
+    private static string? ExtractFastApiDetail(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+            return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("detail", out var detailProp))
+                return detailProp.GetString();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+        return null;
     }
 
     private static RagPreguntaResponse CreateFallbackResponse() =>

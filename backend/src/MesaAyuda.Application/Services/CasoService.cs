@@ -57,6 +57,8 @@ public class CasoService : ICasoService
         string? estado,
         int page,
         int pageSize,
+        string? prioridad = null,
+        string? busqueda = null,
         CancellationToken cancellationToken = default)
     {
         EstadoCaso? estadoFiltro = null;
@@ -71,6 +73,18 @@ public class CasoService : ICasoService
             estadoFiltro = parsed;
         }
 
+        PrioridadCaso? prioridadFiltro = null;
+        if (!string.IsNullOrWhiteSpace(prioridad))
+        {
+            if (!Enum.TryParse<PrioridadCaso>(prioridad.Trim(), ignoreCase: true, out var parsedPrio)
+                || !Enum.IsDefined(parsedPrio))
+            {
+                throw new DomainException($"Prioridad de caso no válida: '{prioridad}'.");
+            }
+
+            prioridadFiltro = parsedPrio;
+        }
+
         var esCliente = string.Equals(rol, nameof(RolUsuario.Cliente), StringComparison.OrdinalIgnoreCase);
         Guid? clienteFiltro = esCliente ? usuarioId : null;
 
@@ -80,8 +94,8 @@ public class CasoService : ICasoService
         var (items, totalCount) = await _casoRepository.GetPagedAsync(
             clienteId: clienteFiltro,
             estado: estadoFiltro,
-            prioridad: null,
-            searchTerm: null,
+            prioridad: prioridadFiltro,
+            searchTerm: busqueda,
             page: safePage,
             pageSize: safePageSize,
             cancellationToken: cancellationToken);

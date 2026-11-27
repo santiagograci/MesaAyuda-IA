@@ -13,4 +13,19 @@ public interface IRagServiceClient
     Task<RagPreguntaResponse> ConsultarSugerenciaAsync(
         string pregunta,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Obtiene el inventario actual de documentos indexados en el microservicio RAG.
+    /// </summary>
+    Task<DocumentosRagResponse> ListarDocumentosAsync(
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reenvía un manual (.md, .txt o .pdf) al microservicio RAG para su ingesta e indexación inmediata.
+    /// </summary>
+    Task<IngestaArchivoResponse> IngestarArchivoAsync(
+        string fileName,
+        byte[] content,
+        string contentType,
+        CancellationToken cancellationToken = default);
 }

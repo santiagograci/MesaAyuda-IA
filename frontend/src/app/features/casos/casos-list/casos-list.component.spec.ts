@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { CasoResumen } from '../../../core/models/api.models';
 import { CasosListComponent } from './casos-list.component';
 
@@ -117,4 +117,25 @@ describe('CasosListComponent', () => {
     demoBtn.click();
     expect(demoSpy).toHaveBeenCalled();
   });
+
+  it('debe emitir busquedaChange con debounce de 300ms y prioridadFilterChange al cambiar prioridad', fakeAsync(() => {
+    const searchSpy = spyOn(component.busquedaChange, 'emit');
+    const prioSpy = spyOn(component.prioridadFilterChange, 'emit');
+
+    const el: HTMLElement = fixture.nativeElement;
+    const searchInput = el.querySelector('[data-testid="cases-search-input"]') as HTMLInputElement;
+    searchInput.value = 'CON-301';
+    searchInput.dispatchEvent(new Event('input'));
+
+    tick(200);
+    expect(searchSpy).not.toHaveBeenCalled();
+
+    tick(100);
+    expect(searchSpy).toHaveBeenCalledWith('CON-301');
+
+    const prioSelect = el.querySelector('[data-testid="priority-filter-select"]') as HTMLSelectElement;
+    prioSelect.value = 'Critica';
+    prioSelect.dispatchEvent(new Event('change'));
+    expect(prioSpy).toHaveBeenCalledWith('Critica');
+  }));
 });

@@ -5,11 +5,13 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Body, FastAPI, HTTPException
+from fastapi import Body, FastAPI, File, HTTPException, UploadFile
 
 from app.config import settings
 from app.llm_provider import get_llm_provider
 from app.models import (
+    DocumentosResponse,
+    IngestaArchivoResponse,
     IngestRequest,
     IngestResponse,
     PreguntaRequest,
@@ -92,6 +94,27 @@ def ingest(request: IngestRequest | None = Body(default=None)) -> IngestResponse
     try:
         return engine.ingest(corpus_path=target_path)
     except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/documentos", response_model=DocumentosResponse)
+def list_documents() -> DocumentosResponse:
+    """Lista los manuales únicos indexados en ChromaDB con su conteo de fragmentos."""
+    engine = get_rag_engine()
+    return engine.list_documents()
+
+
+@app.post("/ingesta/archivo", response_model=IngestaArchivoResponse)
+async def ingest_uploaded_file(file: UploadFile = File(...)) -> IngestaArchivoResponse:
+    """Guarda un manual `.md`, `.txt` o `.pdf` en `/corpus` y lo indexa inmediatamente."""
+    engine = get_rag_engine()
+    content = await file.read()
+    try:
+        return engine.ingest_uploaded_file(
+            filename=file.filename or "",
+            content=content,
+        )
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 

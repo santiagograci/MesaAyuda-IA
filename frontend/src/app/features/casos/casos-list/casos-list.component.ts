@@ -1,6 +1,21 @@
 import { DatePipe } from '@angular/common';
-import { Component, EventEmitter, Input, Output } from '@angular/core';
-import { CasoEliminado, CasoResumen, EstadoCaso } from '../../../core/models/api.models';
+import {
+  Component,
+  DestroyRef,
+  EventEmitter,
+  Input,
+  OnInit,
+  Output,
+  inject
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Subject, debounceTime, distinctUntilChanged } from 'rxjs';
+import {
+  CasoEliminado,
+  CasoResumen,
+  EstadoCaso,
+  PrioridadCaso
+} from '../../../core/models/api.models';
 
 /**
  * Columna izquierda del Split-Screen: filtros por estado, listado paginado,
@@ -45,6 +60,31 @@ import { CasoEliminado, CasoResumen, EstadoCaso } from '../../../core/models/api
       </div>
 
       @if (!papeleraMode) {
+        <div class="search-toolbar">
+          <input
+            type="search"
+            class="form-control search-input"
+            data-testid="cases-search-input"
+            [value]="busqueda"
+            (input)="onSearchInput($event)"
+            placeholder="Buscar por código (ej. CON-301), título o cliente..."
+            aria-label="Buscar casos"
+          />
+          <select
+            class="form-control priority-select"
+            data-testid="priority-filter-select"
+            [value]="prioridadFilter"
+            (change)="onPriorityChange($event)"
+            aria-label="Filtrar por prioridad"
+          >
+            <option value="">Todas las prioridades</option>
+            <option value="Critica">Crítica</option>
+            <option value="Alta">Alta</option>
+            <option value="Media">Media</option>
+            <option value="Baja">Baja</option>
+          </select>
+        </div>
+
         <div class="filter-bar" role="tablist" aria-label="Filtrar por estado">
           @for (opt of filterOptions; track opt.value) {
             <button
@@ -260,6 +300,18 @@ import { CasoEliminado, CasoResumen, EstadoCaso } from '../../../core/models/api
         color: var(--text-secondary);
         font-size: 0.8rem;
       }
+      .search-toolbar {
+        display: grid;
+        gap: 0.45rem;
+        padding: 0.65rem 0.85rem;
+        border-bottom: 1px solid var(--border-color);
+        background: var(--bg-surface);
+      }
+      .search-input,
+      .priority-select {
+        font-size: 0.82rem;
+        padding: 0.4rem 0.6rem;
+      }
       .filter-bar {
         display: flex;
         flex-wrap: wrap;
@@ -344,10 +396,15 @@ import { CasoEliminado, CasoResumen, EstadoCaso } from '../../../core/models/api
     `
   ]
 })
-export class CasosListComponent {
+export class CasosListComponent implements OnInit {
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly searchSubject = new Subject<string>();
+
   @Input({ required: true }) casos: CasoResumen[] = [];
   @Input() selectedId: string | null = null;
   @Input() estadoFilter: EstadoCaso | '' = '';
+  @Input() prioridadFilter: PrioridadCaso | '' = '';
+  @Input() busqueda = '';
   @Input() page = 1;
   @Input() totalPages = 1;
   @Input() totalCount = 0;
@@ -361,6 +418,8 @@ export class CasosListComponent {
 
   @Output() selectCaso = new EventEmitter<string>();
   @Output() estadoFilterChange = new EventEmitter<EstadoCaso | ''>();
+  @Output() prioridadFilterChange = new EventEmitter<PrioridadCaso | ''>();
+  @Output() busquedaChange = new EventEmitter<string>();
   @Output() pageChange = new EventEmitter<number>();
   @Output() togglePapelera = new EventEmitter<boolean>();
   @Output() restaurarCaso = new EventEmitter<string>();
@@ -373,6 +432,22 @@ export class CasosListComponent {
     { label: 'Resuelto', value: 'Resuelto' },
     { label: 'Cerrado', value: 'Cerrado' }
   ];
+
+  ngOnInit(): void {
+    this.searchSubject
+      .pipe(debounceTime(300), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
+      .subscribe((term) => this.busquedaChange.emit(term));
+  }
+
+  onSearchInput(event: Event): void {
+    const value = (event.target as HTMLInputElement).value;
+    this.searchSubject.next(value);
+  }
+
+  onPriorityChange(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value as PrioridadCaso | '';
+    this.prioridadFilterChange.emit(value);
+  }
 
   formatEstado(estado: EstadoCaso): string {
     return estado === 'EnProceso' ? 'En Proceso' : estado;

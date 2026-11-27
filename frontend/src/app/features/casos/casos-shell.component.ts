@@ -5,7 +5,8 @@ import {
   CasoEliminado,
   CasoResumen,
   EstadoCaso,
-  MetricasMesaAyuda
+  MetricasMesaAyuda,
+  PrioridadCaso
 } from '../../core/models/api.models';
 import { AuthService } from '../../core/services/auth.service';
 import { CasosService } from '../../core/services/casos.service';
@@ -14,6 +15,7 @@ import { ThemeCustomizerComponent } from '../../shared/theme-customizer/theme-cu
 import { CasoCreateComponent } from './caso-create/caso-create.component';
 import { CasoDetailComponent } from './caso-detail/caso-detail.component';
 import { CasosListComponent } from './casos-list/casos-list.component';
+import { KnowledgeBaseModalComponent } from './knowledge-base-modal/knowledge-base-modal.component';
 
 /**
  * Contenedor principal Split-Screen del portal MesaAyuda IA.
@@ -27,7 +29,8 @@ import { CasosListComponent } from './casos-list/casos-list.component';
     OfimaLogoComponent,
     CasosListComponent,
     CasoDetailComponent,
-    CasoCreateComponent
+    CasoCreateComponent,
+    KnowledgeBaseModalComponent
   ],
   template: `
     <div class="shell-wrapper">
@@ -43,6 +46,17 @@ import { CasosListComponent } from './casos-list/casos-list.component';
           }
 
           <app-theme-customizer />
+
+          @if (authService.isAnalista()) {
+            <button
+              type="button"
+              class="btn btn-soft btn-sm"
+              data-testid="open-kb-modal-btn"
+              (click)="kbModalOpen.set(true)"
+            >
+              📚 Base Conocimiento RAG
+            </button>
+          }
 
           <button type="button" class="btn btn-primary btn-sm" (click)="openCreate()">
             + Nuevo Caso
@@ -93,6 +107,8 @@ import { CasosListComponent } from './casos-list/casos-list.component';
           [casos]="casos()"
           [selectedId]="selectedCaso()?.id ?? null"
           [estadoFilter]="estadoFilter()"
+          [prioridadFilter]="prioridadFilter()"
+          [busqueda]="busqueda()"
           [page]="page()"
           [totalPages]="totalPages()"
           [totalCount]="totalCount()"
@@ -105,6 +121,8 @@ import { CasosListComponent } from './casos-list/casos-list.component';
           [restoringDemo]="restoringDemo()"
           (selectCaso)="selectCaso($event)"
           (estadoFilterChange)="onEstadoFilterChange($event)"
+          (prioridadFilterChange)="onPrioridadFilterChange($event)"
+          (busquedaChange)="onBusquedaChange($event)"
           (pageChange)="onPageChange($event)"
           (togglePapelera)="onTogglePapelera($event)"
           (restaurarCaso)="onRestaurarCaso($event)"
@@ -144,6 +162,10 @@ import { CasosListComponent } from './casos-list/casos-list.component';
           }
         </div>
       </main>
+
+      @if (kbModalOpen()) {
+        <app-knowledge-base-modal (close)="kbModalOpen.set(false)" />
+      }
     </div>
   `,
   styles: [
@@ -250,6 +272,9 @@ export class CasosShellComponent implements OnInit {
   readonly casos = signal<CasoResumen[]>([]);
   readonly selectedCaso = signal<CasoDetalle | null>(null);
   readonly estadoFilter = signal<EstadoCaso | ''>('');
+  readonly prioridadFilter = signal<PrioridadCaso | ''>('');
+  readonly busqueda = signal<string>('');
+  readonly kbModalOpen = signal<boolean>(false);
   readonly page = signal<number>(1);
   readonly totalPages = signal<number>(1);
   readonly totalCount = signal<number>(0);
@@ -281,6 +306,20 @@ export class CasosShellComponent implements OnInit {
   onEstadoFilterChange(estado: EstadoCaso | ''): void {
     this.creating.set(false);
     this.estadoFilter.set(estado);
+    this.page.set(1);
+    this.loadCasos(true);
+  }
+
+  onPrioridadFilterChange(prioridad: PrioridadCaso | ''): void {
+    this.creating.set(false);
+    this.prioridadFilter.set(prioridad);
+    this.page.set(1);
+    this.loadCasos(true);
+  }
+
+  onBusquedaChange(term: string): void {
+    this.creating.set(false);
+    this.busqueda.set(term);
     this.page.set(1);
     this.loadCasos(true);
   }
@@ -410,7 +449,15 @@ export class CasosShellComponent implements OnInit {
     this.listLoading.set(true);
     this.errorMsg.set('');
 
-    this.casosService.listarCasos(this.estadoFilter(), this.page(), 8).subscribe({
+    this.casosService
+      .listarCasos(
+        this.estadoFilter(),
+        this.page(),
+        8,
+        this.prioridadFilter(),
+        this.busqueda()
+      )
+      .subscribe({
       next: (res) => {
         this.listLoading.set(false);
 
