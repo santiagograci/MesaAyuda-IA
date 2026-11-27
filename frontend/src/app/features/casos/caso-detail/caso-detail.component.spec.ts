@@ -124,6 +124,7 @@ describe('CasoDetailComponent (Borrado con cuenta regresiva y escalamiento de pr
     const updatedSpy = spyOn(component.casoActualizado, 'emit');
 
     const el: HTMLElement = fixture.nativeElement;
+    expect(el.textContent).not.toContain('Pedir sugerencia a la IA');
     const toggleBtn = el.querySelector('[data-testid="toggle-priority-btn"]') as HTMLButtonElement;
     expect(toggleBtn.textContent).toContain('Elevar severidad');
 
@@ -178,6 +179,7 @@ describe('CasoDetailComponent (Borrado con cuenta regresiva y escalamiento de pr
     casosServiceSpy.cambiarPrioridad.and.returnValue(of(adjustedDto));
 
     const el: HTMLElement = fixture.nativeElement;
+    expect(el.textContent).toContain('Pedir sugerencia a la IA');
     const toggleBtn = el.querySelector('[data-testid="toggle-priority-btn"]') as HTMLButtonElement;
     expect(toggleBtn.textContent).toContain('Ajustar prioridad');
 

@@ -86,7 +86,7 @@ const PRIORIDAD_RANK: Record<PrioridadCaso, number> = {
           </div>
 
           <div class="header-actions">
-            @if (c.estado !== 'Cerrado') {
+            @if (authService.isAnalista() && c.estado !== 'Cerrado') {
               <button
                 type="button"
                 class="btn btn-soft btn-sm"
@@ -360,7 +360,11 @@ const PRIORIDAD_RANK: Record<PrioridadCaso, number> = {
 
           @if (publishedRespuestas().length === 0) {
             <div class="empty-history">
-              Aún no hay respuestas publicadas. Puedes responder directamente o solicitar una sugerencia al motor RAG.
+              @if (authService.isAnalista()) {
+                Aún no hay respuestas publicadas. Puedes responder directamente o solicitar una sugerencia al motor RAG.
+              } @else {
+                Aún no hay respuestas publicadas. Un analista de soporte revisará tu caso pronto o puedes agregar más detalles.
+              }
             </div>
           }
 
