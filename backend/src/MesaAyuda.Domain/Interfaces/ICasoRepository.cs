@@ -23,4 +23,10 @@ public interface ICasoRepository
 
     /// <summary>Registra un nuevo caso en el contexto de persistencia.</summary>
     Task AddAsync(Caso caso, CancellationToken cancellationToken = default);
+
+    /// <summary>Registra explícitamente una nueva respuesta hija en el contexto de persistencia.</summary>
+    Task AddRespuestaAsync(Respuesta respuesta, CancellationToken cancellationToken = default);
+
+    /// <summary>Marca un caso existente para eliminación en la unidad de trabajo.</summary>
+    void Remove(Caso caso);
 }

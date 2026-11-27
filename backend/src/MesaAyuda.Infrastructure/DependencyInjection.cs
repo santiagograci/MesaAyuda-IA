@@ -1,11 +1,14 @@
 using MesaAyuda.Application.Interfaces;
 using MesaAyuda.Domain.Interfaces;
+using MesaAyuda.Infrastructure.ExternalServices;
 using MesaAyuda.Infrastructure.Persistence;
 using MesaAyuda.Infrastructure.Persistence.Repositories;
 using MesaAyuda.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http.Resilience;
+using Polly;
 
 namespace MesaAyuda.Infrastructure;
 
@@ -52,6 +55,22 @@ public static class DependencyInjection
         services.AddScoped<ICasoRepository, CasoRepository>();
         services.AddScoped<IUsuarioRepository, UsuarioRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
+
+        var ragBaseUrl = (configuration["RAG_SERVICE_URL"] ?? "http://rag-service:8000").TrimEnd('/');
+        services.AddHttpClient<IRagServiceClient, RagServiceClient>(client =>
+        {
+            client.BaseAddress = new Uri(ragBaseUrl);
+        })
+        .AddStandardResilienceHandler(options =>
+        {
+            options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(8);
+            options.Retry.MaxRetryAttempts = 2;
+            options.Retry.BackoffType = DelayBackoffType.Exponential;
+            options.Retry.UseJitter = true;
+            options.Retry.Delay = TimeSpan.FromMilliseconds(500);
+            options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(30);
+            options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(30);
+        });
 
         return services;
     }

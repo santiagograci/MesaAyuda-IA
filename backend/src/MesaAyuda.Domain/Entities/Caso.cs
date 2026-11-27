@@ -146,4 +146,43 @@ public class Caso
         _respuestas.Add(sugerencia);
         return sugerencia;
     }
+
+    /// <summary>
+    /// Actualiza título, descripción y prioridad de un caso que no se encuentre Cerrado.
+    /// </summary>
+    public void Actualizar(string titulo, string descripcion, PrioridadCaso prioridad)
+    {
+        if (Estado == EstadoCaso.Cerrado)
+            throw new DomainException("No se puede modificar un caso que ya se encuentra Cerrado.");
+        if (string.IsNullOrWhiteSpace(titulo))
+            throw new DomainException("El título del caso es obligatorio.");
+        if (string.IsNullOrWhiteSpace(descripcion))
+            throw new DomainException("La descripción del caso es obligatoria.");
+
+        Titulo = titulo.Trim();
+        Descripcion = descripcion.Trim();
+        Prioridad = prioridad;
+    }
+
+    /// <summary>
+    /// Aprueba y opcionalmente edita una sugerencia generada por IA para publicarla al cliente.
+    /// </summary>
+    public Respuesta AprobarSugerenciaIA(Guid respuestaId, string textoFinal, string nombreAnalista)
+    {
+        if (Estado == EstadoCaso.Cerrado)
+            throw new DomainException("No se pueden aprobar respuestas en un caso Cerrado.");
+
+        var respuesta = _respuestas.FirstOrDefault(r => r.Id == respuestaId)
+            ?? throw new KeyNotFoundException($"No se encontró la respuesta '{respuestaId}' en el caso '{Id}'.");
+
+        if (!respuesta.EsGeneradaPorIA)
+            throw new DomainException("Solo las sugerencias generadas por IA requieren aprobación de analista.");
+
+        respuesta.AprobarYEditar(textoFinal, nombreAnalista);
+
+        if (Estado == EstadoCaso.Abierto)
+            Estado = EstadoCaso.EnProceso;
+
+        return respuesta;
+    }
 }

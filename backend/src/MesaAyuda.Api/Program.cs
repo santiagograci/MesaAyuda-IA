@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Serialization;
+using MesaAyuda.Api.Middleware;
 using MesaAyuda.Application;
 using MesaAyuda.Application.Interfaces;
 using MesaAyuda.Infrastructure;
@@ -12,6 +13,9 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -117,6 +121,8 @@ using (var scope = app.Services.CreateScope())
 
     await DbSeeder.SeedAsync(dbContext, passwordHasher);
 }
+
+app.UseExceptionHandler();
 
 app.UseSwagger();
 app.UseSwaggerUI(options =>

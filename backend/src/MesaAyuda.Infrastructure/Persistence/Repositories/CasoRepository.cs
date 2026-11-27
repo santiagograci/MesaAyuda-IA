@@ -87,4 +87,20 @@ public class CasoRepository : ICasoRepository
     {
         await _dbContext.Casos.AddAsync(caso, cancellationToken);
     }
+
+    /// <summary>
+    /// Registra explícitamente una respuesta hija nueva para evitar conflictos de concurrencia en EF Core.
+    /// </summary>
+    public async Task AddRespuestaAsync(Respuesta respuesta, CancellationToken cancellationToken = default)
+    {
+        await _dbContext.Respuestas.AddAsync(respuesta, cancellationToken);
+    }
+
+    /// <summary>
+    /// Marca un caso existente para eliminación física en la base de datos.
+    /// </summary>
+    public void Remove(Caso caso)
+    {
+        _dbContext.Casos.Remove(caso);
+    }
 }
