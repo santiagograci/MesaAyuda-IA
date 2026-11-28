@@ -190,6 +190,8 @@ import { KnowledgeBaseModalComponent } from './knowledge-base-modal/knowledge-ba
   styles: [
     `
       .topbar {
+        position: relative;
+        z-index: 50;
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -207,6 +209,7 @@ import { KnowledgeBaseModalComponent } from './knowledge-base-modal/knowledge-ba
         align-items: center;
         flex-wrap: wrap;
         gap: 0.55rem;
+        overflow: visible;
       }
       .user-pill {
         display: inline-flex;
@@ -225,6 +228,8 @@ import { KnowledgeBaseModalComponent } from './knowledge-base-modal/knowledge-ba
         align-content: start;
       }
       .kpi-strip {
+        position: relative;
+        z-index: 1;
         display: grid;
         grid-template-columns: repeat(6, minmax(0, 1fr));
         gap: 0.75rem;

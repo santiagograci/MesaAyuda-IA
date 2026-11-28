@@ -29,7 +29,11 @@ import { ThemeService } from '../../core/services/theme.service';
       </button>
 
       @if (isOpen()) {
-        <div class="popover card-surface" role="dialog" aria-label="Personalización de tema">
+        <div
+          class="popover theme-popover card-surface"
+          role="dialog"
+          aria-label="Personalización de tema"
+        >
           <div class="popover-header">
             <strong>Máscaras de Diseño</strong>
             <div class="popover-actions">
@@ -90,17 +94,20 @@ import { ThemeService } from '../../core/services/theme.service';
     `
       .customizer-wrapper {
         position: relative;
+        z-index: 55;
+        overflow: visible;
         display: inline-flex;
         align-items: center;
         gap: 0.5rem;
       }
-      .popover {
+      .popover,
+      .theme-popover {
         position: absolute;
         top: calc(100% + 0.5rem);
         right: 0;
         width: 280px;
         padding: 1rem;
-        z-index: 50;
+        z-index: 60;
       }
       .popover-header {
         display: flex;

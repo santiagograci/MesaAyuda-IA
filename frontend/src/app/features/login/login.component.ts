@@ -125,6 +125,7 @@ const FALLBACK_DEMO_USERS: DemoUser[] = [
         position: absolute;
         top: 1rem;
         right: 1.25rem;
+        z-index: 50;
       }
       .login-card {
         width: 100%;
