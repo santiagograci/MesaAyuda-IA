@@ -11,6 +11,7 @@
   --text-secondary: #475569;
   --border-color: #dbe2ea;
   --accent-primary: #0052cc;
+  --primary: var(--accent-primary);
   --accent-hover: #003e9e;
   --accent-soft: rgba(0, 82, 204, 0.1);
   --accent-contrast: #ffffff;
@@ -60,6 +61,7 @@
 
 [data-mask='ofima-blue'][data-mode='light'] {
   --accent-primary: #0052cc;
+  --primary: var(--accent-primary);
   --accent-hover: #003e9e;
   --accent-soft: rgba(0, 82, 204, 0.1);
   --accent-text: #0052cc;
@@ -145,8 +147,8 @@ textarea {
 }
 
 .btn-primary {
-  background: var(--accent-primary);
-  border-color: var(--accent-primary);
+  background: var(--primary, var(--accent-primary));
+  border-color: var(--primary, var(--accent-primary));
   color: var(--accent-contrast);
 
   &:hover:not(:disabled) {

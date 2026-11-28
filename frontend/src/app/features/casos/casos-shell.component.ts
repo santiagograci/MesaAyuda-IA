@@ -34,7 +34,7 @@ import { KnowledgeBaseModalComponent } from './knowledge-base-modal/knowledge-ba
   ],
   template: `
     <div class="shell-wrapper">
-      <header class="topbar card-surface anim-fade-up">
+      <header class="topbar card-surface">
         <app-ofima-logo variant="compact" />
 
         <div class="user-area">
@@ -189,9 +189,13 @@ import { KnowledgeBaseModalComponent } from './knowledge-base-modal/knowledge-ba
   `,
   styles: [
     `
+      .shell-wrapper {
+        position: relative;
+        overflow: visible;
+      }
       .topbar {
         position: relative;
-        z-index: 50;
+        z-index: 100;
         display: flex;
         justify-content: space-between;
         align-items: center;

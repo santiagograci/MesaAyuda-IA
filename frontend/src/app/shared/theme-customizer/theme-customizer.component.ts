@@ -92,9 +92,15 @@ import { ThemeService } from '../../core/services/theme.service';
   `,
   styles: [
     `
+      :host {
+        position: relative;
+        z-index: 100;
+        display: inline-flex;
+        overflow: visible;
+      }
       .customizer-wrapper {
         position: relative;
-        z-index: 55;
+        z-index: 100;
         overflow: visible;
         display: inline-flex;
         align-items: center;
@@ -107,7 +113,7 @@ import { ThemeService } from '../../core/services/theme.service';
         right: 0;
         width: 280px;
         padding: 1rem;
-        z-index: 60;
+        z-index: 120;
       }
       .popover-header {
         display: flex;
